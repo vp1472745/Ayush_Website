@@ -47,7 +47,6 @@ export const Categories = () => {
     customMessage: '',
   });
   const [rows, setRows] = useState([]);
-  const [companyAdvances, setCompanyAdvances] = useState([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
   const exportMenuRef = useRef(null);
@@ -85,80 +84,6 @@ export const Categories = () => {
 
   const isDeliveredPickupFormat = companyFormat !== 'shadowfax';
 
-  // Fetch advances for the selected company and month to auto-deduct/auto-populate in payouts
-  const fetchAdvancesList = useCallback(async () => {
-    if (!isAuthenticated) return;
-    try {
-      const params = {};
-      if (selectedCompanyFilter !== 'all') params.companyId = selectedCompanyFilter;
-      const res = await apiClient.get(ENDPOINTS.ADVANCES.GET_ALL, { params });
-      if (res.success && Array.isArray(res.data)) {
-        // Sort so selected month advances come first, then latest by date
-        const sorted = [...res.data].sort((a, b) => {
-          const aCurrent = a.month?.toLowerCase() === (selectedMonthFilter || '').toLowerCase() ? 1 : 0;
-          const bCurrent = b.month?.toLowerCase() === (selectedMonthFilter || '').toLowerCase() ? 1 : 0;
-          if (aCurrent !== bCurrent) return bCurrent - aCurrent;
-          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-        });
-        setCompanyAdvances(sorted);
-      } else {
-        setCompanyAdvances([]);
-      }
-    } catch (err) {
-      console.error('[Fetch Advances Error in Payouts]:', err.message);
-      setCompanyAdvances([]);
-    }
-  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter]);
-
-  useEffect(() => {
-    fetchAdvancesList();
-  }, [fetchAdvancesList]);
-
-  // Helper to match advance record by Rider ID or Name and aggregate across multiple dates
-  const findMatchingAdvance = useCallback((queryId, queryName, queryCombined) => {
-    if (!companyAdvances || companyAdvances.length === 0) return null;
-    const rawId = String(queryId || '').trim();
-    const rawName = String(queryName || '').trim().toLowerCase();
-    const rawComb = String(queryCombined || '').trim().toLowerCase();
-
-    const digitsOnly = rawId.replace(/\D/g, '') || rawComb.replace(/\D/g, '');
-
-    const matches = [];
-    for (const adv of companyAdvances) {
-      const advId = String(adv.riderId || '').trim();
-      const advIdDigits = advId.replace(/\D/g, '');
-      const advName = String(adv.riderName || '').trim().toLowerCase();
-
-      let isMatch = false;
-      if (digitsOnly && digitsOnly.length >= 2 && (advIdDigits === digitsOnly || advName.includes(digitsOnly))) {
-        isMatch = true;
-      } else if (rawName && rawName.length >= 2 && (advName === rawName || advName.includes(rawName) || rawName.includes(advName))) {
-        isMatch = true;
-      } else if (rawComb && (advName.includes(rawComb) || rawComb.includes(advName))) {
-        isMatch = true;
-      }
-
-      if (isMatch) {
-        matches.push(adv);
-      }
-    }
-
-    if (matches.length === 0) return null;
-
-    const totalCut = matches.reduce((s, a) => s + (Number(a.advanceCut) || 0), 0);
-    const totalRemaining = matches.reduce((s, a) => s + (Number(a.remainingAmount) !== undefined ? Number(a.remainingAmount) : ((Number(a.advance) || 0) - (Number(a.advanceCut) || 0))), 0);
-    const totalAdv = matches.reduce((s, a) => s + (Number(a.advance) || 0), 0);
-    const combinedRemarks = matches.map((a) => a.remark).filter(Boolean).join(' | ');
-
-    return {
-      advanceCut: totalCut,
-      advance: totalAdv,
-      remainingAmount: totalRemaining,
-      remark: combinedRemarks || `Adv Cut: ₹${totalCut} (Bal: ₹${totalRemaining})`,
-      count: matches.length,
-    };
-  }, [companyAdvances]);
-
   // Fetch rows from backend
   const fetchPayouts = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -171,21 +96,8 @@ export const Categories = () => {
       const res = await apiClient.get(ENDPOINTS.RIDER_PAYOUTS.GET_ALL, { params });
       if (res.success && Array.isArray(res.data)) {
         const formatted = res.data.map((r) => {
-          let advVal = Number(r.advance) || 0;
-          let remarkVal = r.ayushRemark || 'Enter remark';
-
-          if (advVal === 0 && companyAdvances.length > 0) {
-            const advMatch = findMatchingAdvance(r.riderId, r.riderName, r.riderCombined);
-            if (advMatch) {
-              advVal = Number(advMatch.advanceCut) > 0
-                ? Number(advMatch.advanceCut)
-                : (Number(advMatch.remainingAmount) > 0 ? Number(advMatch.remainingAmount) : Number(advMatch.advance) || 0);
-              if (remarkVal === 'Enter remark' && advMatch.remark) {
-                remarkVal = advMatch.remark;
-              }
-            }
-          }
-
+          const advVal = Number(r.advance) || 0;
+          const remarkVal = r.ayushRemark || 'Enter remark';
           const pVal = Number(r.payout) || 0;
           const lVal = Number(r.loss) || 0;
 
@@ -205,40 +117,12 @@ export const Categories = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter, companyAdvances, findMatchingAdvance]);
+  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter]);
 
   useEffect(() => {
     fetchPayouts();
     setSelectedRowIds([]);
   }, [fetchPayouts]);
-
-  // Live auto-populate advance when companyAdvances list loads
-  useEffect(() => {
-    if (companyAdvances.length > 0 && rows.length > 0) {
-      setRows((prev) =>
-        prev.map((r) => {
-          if (Number(r.advance) === 0) {
-            const advMatch = findMatchingAdvance(r.riderId, r.riderName, r.riderCombined);
-            if (advMatch) {
-              const advCut = Number(advMatch.advanceCut) > 0
-                ? Number(advMatch.advanceCut)
-                : (Number(advMatch.remainingAmount) > 0 ? Number(advMatch.remainingAmount) : Number(advMatch.advance) || 0);
-              const remark = (!r.ayushRemark || r.ayushRemark === 'Enter remark') && advMatch.remark ? advMatch.remark : r.ayushRemark;
-              const p = Number(r.payout) || 0;
-              const l = Number(r.loss) || 0;
-              return {
-                ...r,
-                advance: advCut,
-                ayushRemark: remark,
-                finalPayout: p - l - advCut,
-              };
-            }
-          }
-          return r;
-        })
-      );
-    }
-  }, [companyAdvances, findMatchingAdvance]);
 
   // Filtered rows for search
   const displayedRows = useMemo(() => {
@@ -367,8 +251,6 @@ export const Categories = () => {
         if (!rName && matchedConfig.riderName) rName = matchedConfig.riderName;
       }
 
-      const matchedAdv = findMatchingAdvance(rId, rName, rawStr);
-
       setRows((prev) =>
         prev.map((row) => {
           if (row.id === rowId) {
@@ -388,13 +270,7 @@ export const Categories = () => {
               payout = (p * 12) + (c * 6);
             }
 
-            const nextAdv = (!row.advance || row.advance === 0) && matchedAdv
-              ? (Number(matchedAdv.advanceCut) > 0 ? Number(matchedAdv.advanceCut) : (Number(matchedAdv.remainingAmount) > 0 ? Number(matchedAdv.remainingAmount) : Number(matchedAdv.advance) || 0))
-              : (Number(row.advance) || 0);
-
-            const nextRemark = (!row.ayushRemark || row.ayushRemark === 'Enter remark') && matchedAdv?.remark
-              ? matchedAdv.remark
-              : row.ayushRemark;
+            const currentAdv = Number(row.advance) || 0;
 
             return {
               ...row,
@@ -406,9 +282,7 @@ export const Categories = () => {
               clubbed: c,
               deliveredPickupTotal: total,
               payout,
-              advance: nextAdv,
-              ayushRemark: nextRemark,
-              finalPayout: payout - (Number(row.loss) || 0) - nextAdv,
+              finalPayout: payout - (Number(row.loss) || 0) - currentAdv,
             };
           }
           return row;
@@ -425,11 +299,6 @@ export const Categories = () => {
           if (matchedConfig) {
             if (matchedConfig.rate || matchedConfig.rateCard) patchPayload.rateCard = matchedConfig.rate || matchedConfig.rateCard;
           }
-          if (matchedAdv) {
-            const advVal = Number(matchedAdv.advanceCut) > 0 ? Number(matchedAdv.advanceCut) : (Number(matchedAdv.remainingAmount) > 0 ? Number(matchedAdv.remainingAmount) : Number(matchedAdv.advance) || 0);
-            if (advVal > 0) patchPayload.advance = advVal;
-            if (matchedAdv.remark) patchPayload.ayushRemark = matchedAdv.remark;
-          }
           await apiClient.patch(ENDPOINTS.RIDER_PAYOUTS.UPDATE(rowId), patchPayload);
         } catch (error) {
           toast.error(error.message || 'Failed to update record');
@@ -439,13 +308,10 @@ export const Categories = () => {
       return;
     }
 
-    // If user changes riderName or riderId, auto-fill configured fields (Rider ID, Name, Rate) from Settings & Advances
+    // If user changes riderName or riderId, auto-fill configured fields (Rider ID, Name, Rate) from Settings
     if (field === 'riderName' || field === 'riderId') {
       const strVal = String(value ?? '').trim();
       const matchedConfig = findConfiguredRider(strVal);
-      const targetId = field === 'riderId' ? strVal : (matchedConfig?.riderId || '');
-      const targetName = field === 'riderName' ? strVal : (matchedConfig?.riderName || '');
-      const matchedAdv = findMatchingAdvance(targetId, targetName, strVal);
 
       setRows((prev) =>
         prev.map((row) => {
@@ -459,15 +325,6 @@ export const Categories = () => {
               }
               if (matchedConfig.rate || matchedConfig.rateCard) {
                 nextRow.rateCard = matchedConfig.rate || matchedConfig.rateCard;
-              }
-            }
-
-            if ((!nextRow.advance || nextRow.advance === 0) && matchedAdv) {
-              nextRow.advance = Number(matchedAdv.advanceCut) > 0
-                ? Number(matchedAdv.advanceCut)
-                : (Number(matchedAdv.remainingAmount) > 0 ? Number(matchedAdv.remainingAmount) : Number(matchedAdv.advance) || 0);
-              if (!nextRow.ayushRemark || nextRow.ayushRemark === 'Enter remark') {
-                nextRow.ayushRemark = matchedAdv.remark || nextRow.ayushRemark;
               }
             }
 
@@ -493,8 +350,8 @@ export const Categories = () => {
         })
       );
 
-      if (matchedConfig || matchedAdv) {
-        toast.success(`Auto-matched rider details & advance records!`);
+      if (matchedConfig) {
+        toast.success(`Auto-matched rider details from settings!`);
       }
 
       const timerKey = `${rowId}_riderLookup`;
@@ -508,11 +365,6 @@ export const Categories = () => {
             if (field === 'riderName' && matchedConfig.riderId) patchData.riderId = matchedConfig.riderId;
             if (field === 'riderId' && matchedConfig.riderName) patchData.riderName = matchedConfig.riderName;
             if (matchedConfig.rate || matchedConfig.rateCard) patchData.rateCard = matchedConfig.rate || matchedConfig.rateCard;
-          }
-          if (matchedAdv) {
-            const advVal = Number(matchedAdv.advanceCut) > 0 ? Number(matchedAdv.advanceCut) : (Number(matchedAdv.remainingAmount) > 0 ? Number(matchedAdv.remainingAmount) : Number(matchedAdv.advance) || 0);
-            if (advVal > 0) patchData.advance = advVal;
-            if (matchedAdv.remark) patchData.ayushRemark = matchedAdv.remark;
           }
           await apiClient.patch(ENDPOINTS.RIDER_PAYOUTS.UPDATE(rowId), patchData);
         } catch (error) {
@@ -1017,18 +869,6 @@ export const Categories = () => {
             }
           }
 
-          let finalAdv = advance;
-          let finalRemark = ayushRemark;
-          const matchedAdv = findMatchingAdvance(rId, rName, rawIdentifier);
-          if (finalAdv === 0 && matchedAdv) {
-            finalAdv = Number(matchedAdv.advanceCut) > 0
-              ? Number(matchedAdv.advanceCut)
-              : (Number(matchedAdv.remainingAmount) > 0 ? Number(matchedAdv.remainingAmount) : Number(matchedAdv.advance) || 0);
-            if (finalRemark === 'Enter remark' && matchedAdv.remark) {
-              finalRemark = matchedAdv.remark;
-            }
-          }
-
           importedRows.push({
             riderName: rName,
             riderId: rId,
@@ -1038,9 +878,9 @@ export const Categories = () => {
             pickup,
             rateCard: rawRate || 12,
             loss,
-            advance: finalAdv,
+            advance,
             paymentStatus: validStatus,
-            ayushRemark: finalRemark,
+            ayushRemark,
           });
         }
 

@@ -9,9 +9,10 @@ import {
   Calendar,
   ChevronDown,
   FileSpreadsheet,
+  Mail,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { CustomDropdown, Modal, Pagination, SampleTemplateDropdown } from '../components/common';
+import { CustomDropdown, Modal, Pagination, SampleTemplateDropdown, SendEmailModal } from '../components/common';
 import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
@@ -38,6 +39,7 @@ export const Payments = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
   // Active companies & current company definition
   const activeCompanies = useMemo(() => {
@@ -100,6 +102,20 @@ export const Payments = () => {
       return matchSearch;
     });
   }, [payments, searchQuery]);
+
+  // Summary metrics calculation
+  const summaryMetrics = useMemo(() => {
+    return filteredPayments.reduce(
+      (acc, p) => {
+        const payout = Number(p.payout) || 0;
+        const finalPayout = Number(p.finalPayout) || 0;
+        acc.totalGross += payout;
+        acc.totalPaidOut += finalPayout;
+        return acc;
+      },
+      { totalGross: 0, totalPaidOut: 0 }
+    );
+  }, [filteredPayments]);
 
   // Pagination calculation
   const totalItems = filteredPayments.length;
@@ -458,6 +474,17 @@ export const Payments = () => {
               </div>
             )}
           </div>
+
+          {/* Send Mail Button */}
+          <button
+            type="button"
+            onClick={() => setIsEmailModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+            title="Send Exported Excel directly to Email"
+          >
+            <Mail className="w-3.5 h-3.5 text-rose-600" />
+            <span>Send Mail</span>
+          </button>
         </div>
       </div>
 
@@ -694,6 +721,65 @@ export const Payments = () => {
           </div>
         </Modal>
       )}
+
+      {/* Send Email Modal */}
+      <SendEmailModal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        reportTitle="Transaction Ledger"
+        reportType="Disbursement Transaction Ledger"
+        sheetName="Transactions"
+        filename={`Transactions_${selectedMonthFilter}_${selectedFinancialYear || 'FY'}.xlsx`}
+        metadata={[
+          {
+            label: 'Company',
+            value:
+              selectedCompanyFilter === 'all'
+                ? 'All Companies'
+                : companies.find((c) => (c.id || c._id) === selectedCompanyFilter)?.name || 'Company',
+          },
+          { label: 'Period', value: `${selectedMonthFilter} (${selectedFinancialYear || 'FY'})` },
+          { label: 'Status Filter', value: selectedStatus },
+        ]}
+        summaryCards={[
+          { label: 'Total Transactions', value: filteredPayments.length },
+          { label: 'Total Paid Out', value: formatCurrency(summaryMetrics.totalPaidOut), highlight: true, color: 'emerald' },
+        ]}
+        headers={[
+          'Transaction ID',
+          'Rider Name',
+          'Rider ID',
+          'Company',
+          'Month',
+          'Gross Payout',
+          'Loss Deduction',
+          'Advance Deduction',
+          'Final Payout',
+          'Payment Status',
+          'Payment Date',
+          'Ayush Remark',
+        ]}
+        rows={filteredPayments.map((p) => {
+          const compName =
+            companies.find((c) => c.id === p.companyId || c._id === p.companyId)?.name ||
+            p.companyName ||
+            'Company';
+          return [
+            p.transactionId || '-',
+            p.riderName || '',
+            p.riderId || '',
+            compName,
+            p.month || selectedMonthFilter,
+            Number(p.payout) || 0,
+            Number(p.loss) || 0,
+            Number(p.advance) || 0,
+            Number(p.finalPayout) || 0,
+            p.paymentStatus || 'Pending',
+            p.paymentDate || '-',
+            p.remark || '',
+          ];
+        })}
+      />
     </div>
   );
 };

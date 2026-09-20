@@ -15,7 +15,7 @@ const lossDetailSchema = new mongoose.Schema(
     },
     trackingId: {
       type: String,
-      required: [true, 'Tracking ID is required'],
+      default: '',
       trim: true,
     },
     price: {
@@ -37,6 +37,11 @@ const lossDetailSchema = new mongoose.Schema(
       type: String,
       enum: ['Recovered', 'Not Recovered'],
       default: 'Not Recovered',
+    },
+    remark: {
+      type: String,
+      default: '',
+      trim: true,
     },
   },
   {

@@ -278,11 +278,22 @@ export const CommonTable = ({
                           <td key={col.key} className="py-1 px-1 whitespace-nowrap">
                             <input
                               type={col.type === 'number' ? 'number' : 'text'}
-                              value={val ?? ''}
-                              disabled={!canEdit}
-                              onChange={(e) =>
-                                onCellChange && onCellChange(row.id, col.key, e.target.value)
+                              value={
+                                col.type === 'number' && (val === 0 || val === '0')
+                                  ? ''
+                                  : (val ?? '')
                               }
+                              disabled={!canEdit}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => {
+                                let clean = e.target.value;
+                                if (col.type === 'number' && clean) {
+                                  if (/^0+[0-9]+/.test(clean)) {
+                                    clean = clean.replace(/^0+/, '');
+                                  }
+                                }
+                                onCellChange && onCellChange(row.id, col.key, clean);
+                              }}
                               className={`w-full px-2 py-1 text-xs rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none font-medium transition-all text-gray-900 ${
                                 col.align === 'right' ? 'text-right' : 'text-left'
                               } ${col.textClass || 'text-gray-900'}`}

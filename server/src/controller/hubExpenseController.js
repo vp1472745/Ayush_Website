@@ -34,23 +34,26 @@ const getHubExpenses = async (req, res, next) => {
 // @access  Private
 const createHubExpense = async (req, res, next) => {
   try {
-    const { companyId, month, expenseName, amount = 0, date } = req.body;
+    const { companyId, month, expenseName, amount = 0, date, remark, ayushRemark } = req.body;
 
-    if (!companyId || !month) {
+    if (!month) {
       res.status(400);
-      throw new Error('Company and Month are required.');
+      throw new Error('Month is required.');
     }
 
     const expense = new HubExpense({
-      companyId,
+      companyId: companyId || undefined,
       month,
       expenseName: expenseName || 'New Expense',
       amount: Number(amount) || 0,
       date: date || new Date().toISOString().split('T')[0],
+      remark: (remark ?? ayushRemark ?? '').toString().trim(),
     });
 
     const saved = await expense.save();
-    await saved.populate('companyId', 'name code');
+    if (saved.companyId) {
+      await saved.populate('companyId', 'name code');
+    }
 
     res.status(201).json({
       success: true,
@@ -69,18 +72,19 @@ const bulkImportHubExpenses = async (req, res, next) => {
   try {
     const { companyId, month, rows } = req.body;
 
-    if (!companyId || !month || !Array.isArray(rows) || rows.length === 0) {
+    if (!month || !Array.isArray(rows) || rows.length === 0) {
       res.status(400);
-      throw new Error('Valid companyId, month, and array of expense rows are required.');
+      throw new Error('Month and array of expense rows are required.');
     }
 
     const docsToInsert = rows.map((r, index) => {
       return {
-        companyId,
+        companyId: companyId || undefined,
         month,
         expenseName: r.expenseName || `Expense ${index + 1}`,
         amount: Number(r.amount) || 0,
         date: r.date || new Date().toISOString().split('T')[0],
+        remark: (r.remark ?? r.ayushRemark ?? '').toString().trim(),
       };
     });
 
@@ -113,9 +117,13 @@ const updateHubExpense = async (req, res, next) => {
     if (req.body.date !== undefined) expense.date = req.body.date;
     if (req.body.month !== undefined) expense.month = req.body.month;
     if (req.body.companyId !== undefined) expense.companyId = req.body.companyId;
+    if (req.body.remark !== undefined) expense.remark = (req.body.remark || '').trim();
+    if (req.body.ayushRemark !== undefined) expense.remark = (req.body.ayushRemark || '').trim();
 
     const updated = await expense.save();
-    await updated.populate('companyId', 'name code');
+    if (updated.companyId) {
+      await updated.populate('companyId', 'name code');
+    }
 
     res.json({
       success: true,

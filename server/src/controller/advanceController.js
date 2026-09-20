@@ -49,9 +49,9 @@ const createAdvance = async (req, res, next) => {
       remark = '',
     } = req.body;
 
-    if (!companyId || !month || !riderName) {
+    if (!riderName) {
       res.status(400);
-      throw new Error('Company, Month, and Rider Name are required.');
+      throw new Error('Rider Name is required.');
     }
 
     const numAdvance = Number(advance) || 0;
@@ -59,9 +59,9 @@ const createAdvance = async (req, res, next) => {
     const remainingAmount = numAdvance - numAdvanceCut;
 
     const advanceDoc = new Advance({
-      companyId,
-      month,
-      financialYear,
+      companyId: companyId || undefined,
+      month: month || undefined,
+      financialYear: financialYear || undefined,
       date: date || new Date().toISOString().split('T')[0],
       riderName: riderName.trim(),
       riderId: (riderId || '').toString().trim(),
@@ -72,7 +72,9 @@ const createAdvance = async (req, res, next) => {
     });
 
     const saved = await advanceDoc.save();
-    await saved.populate('companyId', 'name code');
+    if (saved.companyId) {
+      await saved.populate('companyId', 'name code');
+    }
 
     res.status(201).json({
       success: true,
@@ -91,9 +93,9 @@ const bulkImportAdvances = async (req, res, next) => {
   try {
     const { companyId, month, financialYear = '', rows } = req.body;
 
-    if (!companyId || !month || !Array.isArray(rows) || rows.length === 0) {
+    if (!Array.isArray(rows) || rows.length === 0) {
       res.status(400);
-      throw new Error('Valid companyId, month, and array of advance rows are required.');
+      throw new Error('Array of advance rows is required.');
     }
 
     const docsToInsert = rows.map((r) => {
@@ -102,9 +104,9 @@ const bulkImportAdvances = async (req, res, next) => {
       const computedRemaining = numAdvance - numAdvanceCut;
 
       return {
-        companyId,
-        month,
-        financialYear,
+        companyId: companyId || undefined,
+        month: month || undefined,
+        financialYear: financialYear || undefined,
         date: r.date || r.Date || new Date().toISOString().split('T')[0],
         riderName: (r.riderName || r['Rider Name'] || r.rider || '').toString().trim() || 'Rider',
         riderId: (r.riderId || r['Rider ID'] || r.id || '').toString().trim(),
@@ -153,7 +155,9 @@ const updateAdvance = async (req, res, next) => {
     advanceDoc.remainingAmount = (Number(advanceDoc.advance) || 0) - (Number(advanceDoc.advanceCut) || 0);
 
     const updated = await advanceDoc.save();
-    await updated.populate('companyId', 'name code');
+    if (updated.companyId) {
+      await updated.populate('companyId', 'name code');
+    }
 
     res.json({
       success: true,

@@ -8,9 +8,10 @@ import {
   Inbox,
   Trash2,
   ChevronDown,
+  Mail,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { CustomDropdown, ConfirmationModal, Pagination, SampleTemplateDropdown } from '../components/common';
+import { CustomDropdown, ConfirmationModal, Pagination, SampleTemplateDropdown, SendEmailModal } from '../components/common';
 import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
@@ -31,6 +32,7 @@ export const LossDetails = () => {
   const [selectedRowIds, setSelectedRowIds] = useState([]);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [rows, setRows] = useState([]);
@@ -107,6 +109,7 @@ export const LossDetails = () => {
         r.trackingId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.reason?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.riderName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.remark?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.status?.toLowerCase().includes(searchQuery.toLowerCase());
       return matchSearch;
     });
@@ -144,12 +147,21 @@ export const LossDetails = () => {
       return;
     }
 
+    let cleanValue = value;
+    if (field === 'price') {
+      let str = String(value ?? '').trim();
+      if (/^0+[0-9]+/.test(str)) {
+        str = str.replace(/^0+/, '');
+      }
+      cleanValue = str;
+    }
+
     setRows((prev) =>
-      prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r))
+      prev.map((r) => (r.id === rowId ? { ...r, [field]: cleanValue } : r))
     );
 
     try {
-      await apiClient.patch(ENDPOINTS.LOSS_DETAILS.UPDATE(rowId), { [field]: value });
+      await apiClient.patch(ENDPOINTS.LOSS_DETAILS.UPDATE(rowId), { [field]: cleanValue });
     } catch (error) {
       toast.error(error.message || 'Failed to update loss record');
       fetchLossDetails();
@@ -181,11 +193,12 @@ export const LossDetails = () => {
         reason: 'Parcel damage/loss',
         riderName: '',
         status: 'Not Recovered',
+        remark: '',
       };
 
       const res = await apiClient.post(ENDPOINTS.LOSS_DETAILS.CREATE, newLossPayload);
       if (res.success && res.data) {
-        const created = { ...res.data, id: res.data._id, riderName: res.data.riderName || '' };
+        const created = { ...res.data, id: res.data._id, riderName: res.data.riderName || '', remark: res.data.remark || '' };
         setRows((prev) => [created, ...prev]);
         toast.success('New loss entry added.');
       }
@@ -245,7 +258,7 @@ export const LossDetails = () => {
     }
   };
 
-  const lossHeaders = ['Tracking ID', 'Price', 'Reason', 'Rider Name', 'Status'];
+  const lossHeaders = ['Tracking ID', 'Price', 'Reason', 'Rider Name', 'Status', 'Remark'];
 
   const getExportData = () => {
     return displayedRows.map((r) => [
@@ -254,6 +267,7 @@ export const LossDetails = () => {
       r.reason || '',
       r.riderName || '',
       r.status || 'Not Recovered',
+      r.remark || '',
     ]);
   };
 
@@ -340,6 +354,7 @@ export const LossDetails = () => {
         const reasonIdx = findColIdx(['reason', 'cause', 'description']);
         const riderIdx = findColIdx(['rider name', 'rider', 'driver']);
         const statusIdx = findColIdx(['status']);
+        const remarkIdx = findColIdx(['remark', 'remarks', 'note', 'notes']);
 
         const importedRows = [];
         for (let i = 1; i < rawJson.length; i++) {
@@ -352,6 +367,7 @@ export const LossDetails = () => {
           const riderName = riderIdx >= 0 && row[riderIdx] ? String(row[riderIdx]).trim() : (row[3] ? String(row[3]).trim() : '');
           const statusRaw = statusIdx >= 0 ? String(row[statusIdx] || '').trim().toLowerCase() : 'not recovered';
           const status = (statusRaw === 'recovered' || statusRaw === 'recover') ? 'Recovered' : 'Not Recovered';
+          const remark = remarkIdx >= 0 && row[remarkIdx] ? String(row[remarkIdx]).trim() : (row[5] ? String(row[5]).trim() : '');
 
           importedRows.push({
             trackingId,
@@ -359,6 +375,7 @@ export const LossDetails = () => {
             reason,
             riderName,
             status,
+            remark,
           });
         }
 
@@ -476,6 +493,17 @@ export const LossDetails = () => {
             )}
           </div>
 
+          {/* Send Mail Button */}
+          <button
+            type="button"
+            onClick={() => setIsEmailModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+            title="Send Exported Excel directly to Email"
+          >
+            <Mail className="w-3.5 h-3.5 text-rose-600" />
+            <span>Send Mail</span>
+          </button>
+
           <button
             type="button"
             onClick={handleAddRow}
@@ -546,6 +574,7 @@ export const LossDetails = () => {
                 <th className="py-1.5 px-3 whitespace-nowrap">Reason</th>
                 <th className="py-1.5 px-3 whitespace-nowrap">Rider Name</th>
                 <th className="py-1.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-1.5 px-3 whitespace-nowrap">Remark</th>
                 <th className="py-1.5 px-2 text-center text-gray-500 font-semibold w-10 whitespace-nowrap">Action</th>
               </tr>
             </thead>
@@ -554,7 +583,7 @@ export const LossDetails = () => {
             <tbody className="divide-y divide-gray-100">
               {paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-gray-500">
+                  <td colSpan={9} className="py-12 text-center text-gray-500">
                     <div className="w-8 h-8 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center mx-auto mb-1.5">
                       <Inbox className="w-4 h-4" />
                     </div>
@@ -603,6 +632,7 @@ export const LossDetails = () => {
                           type="text"
                           value={row.trackingId || ''}
                           disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'trackingId', e.target.value)}
                           className="w-full px-2 py-1 text-xs font-mono font-bold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                           placeholder="TRK-00000000"
@@ -615,8 +645,9 @@ export const LossDetails = () => {
                           <span className="text-gray-400 font-medium">₹</span>
                           <input
                             type="number"
-                            value={row.price ?? ''}
+                            value={row.price === 0 || row.price === '0' ? '' : (row.price ?? '')}
                             disabled={!canEdit}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'price', e.target.value)}
                             className="w-20 px-2 py-1 text-xs text-right font-bold text-rose-700 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-rose-500 focus:ring-1 focus:ring-rose-100 outline-none transition-all"
                             placeholder="0"
@@ -630,6 +661,7 @@ export const LossDetails = () => {
                           type="text"
                           value={row.reason || ''}
                           disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'reason', e.target.value)}
                           className="w-full px-2 py-1 text-xs font-medium text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                           placeholder="Reason for loss / damage..."
@@ -642,6 +674,7 @@ export const LossDetails = () => {
                           type="text"
                           value={row.riderName || ''}
                           disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'riderName', e.target.value)}
                           className="w-full px-2 py-1 text-xs font-semibold text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                           placeholder="Assigned rider name..."
@@ -658,6 +691,19 @@ export const LossDetails = () => {
                           size="pill"
                           minWidth="120px"
                           align="center"
+                        />
+                      </td>
+
+                      {/* Col 6: Remark (Editable) */}
+                      <td className="py-1 px-2.5">
+                        <input
+                          type="text"
+                          value={row.remark || ''}
+                          disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => handleCellChange(row.id, 'remark', e.target.value)}
+                          className="w-full min-w-[140px] px-2 py-1 text-xs font-medium text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
+                          placeholder="Enter remark"
                         />
                       </td>
 
@@ -680,7 +726,7 @@ export const LossDetails = () => {
               {/* Spacer row only when rows < pageSize to absorb space cleanly */}
               {paginatedRows.length > 0 && paginatedRows.length < pageSize && (
                 <tr className="h-full border-none pointer-events-none">
-                  <td colSpan={8} className="p-0 border-none bg-transparent"></td>
+                  <td colSpan={9} className="p-0 border-none bg-transparent"></td>
                 </tr>
               )}
             </tbody>
@@ -706,6 +752,7 @@ export const LossDetails = () => {
                   <td className="py-1.5 px-2 text-center whitespace-nowrap font-bold text-emerald-800">
                     {recoveredCount} Recovered
                   </td>
+                  <td className="py-1.5 px-3"></td>
                   <td className="py-1.5 px-2"></td>
                 </tr>
               </tfoot>
@@ -749,6 +796,29 @@ export const LossDetails = () => {
         message={`Are you sure you want to delete ${selectedRowIds.length} selected loss records? This action cannot be undone.`}
         confirmLabel={`Yes, Delete ${selectedRowIds.length} Records`}
         variant="danger"
+      />
+
+      {/* Send Email Modal */}
+      <SendEmailModal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        reportTitle="Loss Details"
+        reportType="Shipment Loss Ledger"
+        sheetName="Loss Details"
+        filename={`Loss_Details_${selectedMonthFilter}_${selectedFinancialYear || 'FY'}_${(selectedCompanyFilter === 'all' ? 'All_Companies' : (currentCompany?.name || 'Company')).replace(/\s+/g, '_')}.xlsx`}
+        metadata={[
+          {
+            label: 'Company',
+            value: selectedCompanyFilter === 'all' ? 'All Companies' : currentCompany?.name || 'Company',
+          },
+          { label: 'Period', value: `${selectedMonthFilter} (${selectedFinancialYear || 'FY'})` },
+        ]}
+        summaryCards={[
+          { label: 'Total Shipments', value: displayedRows.length },
+          { label: 'Total Loss Amount', value: formatCurrency(totalLossPrice), highlight: true, color: 'emerald' },
+        ]}
+        headers={lossHeaders}
+        rows={getExportData()}
       />
     </div>
   );

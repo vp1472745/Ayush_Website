@@ -23,4 +23,5 @@ export { StatCard } from './StatCard';
 export { CustomDropdown } from './CustomDropdown';
 export { CommonTable } from './CommonTable';
 export { SampleTemplateDropdown } from './SampleTemplateDropdown';
+export { SendEmailModal } from './SendEmailModal';
 

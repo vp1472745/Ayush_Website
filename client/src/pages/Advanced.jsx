@@ -13,27 +13,19 @@ import {
   Hash,
   DollarSign,
   MessageSquare,
-  AlertCircle,
-  Zap,
-  Clock,
-  ArrowRight,
-  CheckSquare,
-  Square,
-  Sparkles,
+  Mail,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ConfirmationModal, Pagination, SampleTemplateDropdown, CustomDropdown } from '../components/common';
-import { useCompany } from '../context/CompanyContext';
+import { ConfirmationModal, Pagination, SendEmailModal } from '../components/common';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/calculations';
-import { downloadCSV, downloadExcel, downloadSampleTemplate } from '../utils/exportUtils';
+import { downloadCSV, downloadExcel } from '../utils/exportUtils';
 import apiClient from '../api/apiClient';
 import { ENDPOINTS } from '../api/endpoints';
 
 export const Advanced = () => {
-  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
@@ -43,6 +35,8 @@ export const Advanced = () => {
   const [selectedRowIds, setSelectedRowIds] = useState([]);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [isSampleSheetMenuOpen, setIsSampleSheetMenuOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -50,12 +44,7 @@ export const Advanced = () => {
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
   const exportMenuRef = useRef(null);
-
-  // Outstanding advances from previous months state
-  const [outstandingAdvances, setOutstandingAdvances] = useState([]);
-  const [isCarryForwardModalOpen, setIsCarryForwardModalOpen] = useState(false);
-  const [carryingForward, setCarryingForward] = useState(false);
-  const [selectedCarryIds, setSelectedCarryIds] = useState([]);
+  const sampleSheetMenuRef = useRef(null);
 
   // New Record Form State for Add Modal
   const [newForm, setNewForm] = useState({
@@ -67,94 +56,26 @@ export const Advanced = () => {
     remark: '',
   });
 
-  const [isRiderSuggestionsOpen, setIsRiderSuggestionsOpen] = useState(false);
-  const riderComboboxRef = useRef(null);
-
-  // Close rider suggestions on outside click
-  useEffect(() => {
-    const handleOutsideClick = (e) => {
-      if (riderComboboxRef.current && !riderComboboxRef.current.contains(e.target)) {
-        setIsRiderSuggestionsOpen(false);
-      }
-    };
-    if (isRiderSuggestionsOpen) {
-      document.addEventListener('mousedown', handleOutsideClick);
-    }
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isRiderSuggestionsOpen]);
-
-  // Close export dropdown on outside click
+  // Close menus on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
         setIsExportMenuOpen(false);
+      }
+      if (sampleSheetMenuRef.current && !sampleSheetMenuRef.current.contains(event.target)) {
+        setIsSampleSheetMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filtered active companies
-  const activeCompanies = useMemo(() => {
-    return companies.filter((c) => c.status === 'Active');
-  }, [companies]);
-
-  const currentCompany = useMemo(() => {
-    return activeCompanies.find((c) => (c.id || c._id) === selectedCompanyFilter) || activeCompanies[0] || null;
-  }, [activeCompanies, selectedCompanyFilter]);
-
-  // Configured riders for the currently selected global company
-  const companyRiders = useMemo(() => {
-    if (!currentCompany || !Array.isArray(currentCompany.riders)) return [];
-    return currentCompany.riders.filter((r) => r && (r.riderName || r.riderId));
-  }, [currentCompany]);
-
-  // Options formatted for CustomDropdown / Quick Selector
-  const riderDropdownOptions = useMemo(() => {
-    return companyRiders.map((r) => {
-      const name = (r.riderName || '').trim();
-      const id = (r.riderId || '').trim();
-      const displayLabel = name && id ? `${name} (${id})` : name || id || 'Unknown Rider';
-      return {
-        value: id || name,
-        label: displayLabel,
-        badge: id ? `#${id}` : undefined,
-        icon: User,
-        riderName: name,
-        riderId: id,
-      };
-    });
-  }, [companyRiders]);
-
-  // Filtered riders for the modal combobox
-  const filteredModalRiders = useMemo(() => {
-    if (!companyRiders || companyRiders.length === 0) return [];
-    const q = (newForm.riderName || '').trim().toLowerCase();
-    if (!q) return companyRiders;
-    return companyRiders.filter(
-      (r) =>
-        (r.riderName && r.riderName.toLowerCase().includes(q)) ||
-        (r.riderId && r.riderId.toLowerCase().includes(q))
-    );
-  }, [companyRiders, newForm.riderName]);
-
-  // Fetch advance records from backend
+  // Fetch all advance records from backend
   const fetchAdvances = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       setLoading(true);
-      const params = {};
-      if (selectedCompanyFilter && selectedCompanyFilter !== 'all') {
-        params.companyId = selectedCompanyFilter;
-      }
-      if (selectedMonthFilter && selectedMonthFilter !== 'all') {
-        params.month = selectedMonthFilter;
-      }
-      if (selectedFinancialYear && selectedFinancialYear !== 'all') {
-        params.financialYear = selectedFinancialYear;
-      }
-
-      const res = await apiClient.get(ENDPOINTS.ADVANCES.GET_ALL, { params });
+      const res = await apiClient.get(ENDPOINTS.ADVANCES.GET_ALL);
       if (res.success && Array.isArray(res.data)) {
         const formatted = res.data.map((item) => ({
           ...item,
@@ -164,7 +85,10 @@ export const Advanced = () => {
           riderId: item.riderId || '',
           advance: Number(item.advance) || 0,
           advanceCut: Number(item.advanceCut) || 0,
-          remainingAmount: Number(item.remainingAmount) || (Number(item.advance || 0) - Number(item.advanceCut || 0)),
+          remainingAmount:
+            Number(item.remainingAmount) !== undefined && !isNaN(Number(item.remainingAmount))
+              ? Number(item.remainingAmount)
+              : (Number(item.advance || 0) - Number(item.advanceCut || 0)),
           remark: item.remark || '',
         }));
         setRows(formatted);
@@ -174,85 +98,12 @@ export const Advanced = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear]);
-
-  // Fetch outstanding advances from prior months
-  const fetchOutstandingAdvances = useCallback(async () => {
-    if (!isAuthenticated || !selectedCompanyFilter || selectedCompanyFilter === 'all') {
-      setOutstandingAdvances([]);
-      return;
-    }
-    try {
-      const params = {
-        companyId: selectedCompanyFilter,
-        month: selectedMonthFilter,
-        financialYear: selectedFinancialYear,
-      };
-      const res = await apiClient.get(ENDPOINTS.ADVANCES.GET_OUTSTANDING, { params });
-      if (res.success && Array.isArray(res.data)) {
-        setOutstandingAdvances(res.data);
-      } else {
-        setOutstandingAdvances([]);
-      }
-    } catch (err) {
-      console.error('[Fetch Outstanding Advances Error]:', err.message);
-      setOutstandingAdvances([]);
-    }
-  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     fetchAdvances();
-    fetchOutstandingAdvances();
     setSelectedRowIds([]);
-  }, [fetchAdvances, fetchOutstandingAdvances]);
-
-  // Handle carry forward action
-  const handleCarryForward = async (itemsToCarry = null) => {
-    if (!canEdit) {
-      notifyLocked('carry forward advances');
-      return;
-    }
-    const targetCompanyId = selectedCompanyFilter || (activeCompanies[0]?.id || activeCompanies[0]?._id);
-    if (!targetCompanyId) {
-      toast.error('Please select an active company first.');
-      return;
-    }
-    try {
-      setCarryingForward(true);
-      const recordsToCarry = itemsToCarry || outstandingAdvances.filter((o) => selectedCarryIds.length === 0 || selectedCarryIds.includes(o.id));
-      const res = await apiClient.post(ENDPOINTS.ADVANCES.CARRY_FORWARD, {
-        companyId: targetCompanyId,
-        month: selectedMonthFilter,
-        financialYear: selectedFinancialYear,
-        records: recordsToCarry,
-      });
-      if (res.success) {
-        toast.success(res.message || `Successfully carried forward advances to ${selectedMonthFilter}!`);
-        setIsCarryForwardModalOpen(false);
-        setSelectedCarryIds([]);
-        fetchAdvances();
-        fetchOutstandingAdvances();
-      }
-    } catch (error) {
-      toast.error(error.message || 'Failed to carry forward advances');
-    } finally {
-      setCarryingForward(false);
-    }
-  };
-
-  // Detected outstanding advance for rider in new form
-  const selectedRiderOutstanding = useMemo(() => {
-    if (!outstandingAdvances || outstandingAdvances.length === 0) return null;
-    const nameInput = (newForm.riderName || '').trim().toLowerCase();
-    const idInput = (newForm.riderId || '').trim().toLowerCase();
-    if (!nameInput && !idInput) return null;
-
-    return outstandingAdvances.find((o) => {
-      const oId = (o.riderId || '').trim().toLowerCase();
-      const oName = (o.riderName || '').trim().toLowerCase();
-      return (idInput && oId === idInput) || (nameInput && (oName === nameInput || oName.includes(nameInput)));
-    });
-  }, [outstandingAdvances, newForm.riderName, newForm.riderId]);
+  }, [fetchAdvances]);
 
   // Filtered rows based on search
   const displayedRows = useMemo(() => {
@@ -270,6 +121,21 @@ export const Advanced = () => {
       );
     });
   }, [rows, searchQuery]);
+
+  // Totals calculation
+  const totals = useMemo(() => {
+    return displayedRows.reduce(
+      (acc, r) => {
+        const adv = Number(r.advance) || 0;
+        const cut = Number(r.advanceCut) || 0;
+        acc.advance += adv;
+        acc.advanceCut += cut;
+        acc.remaining += adv - cut;
+        return acc;
+      },
+      { advance: 0, advanceCut: 0, remaining: 0 }
+    );
+  }, [displayedRows]);
 
   // Pagination calculation
   const totalItems = displayedRows.length;
@@ -309,34 +175,25 @@ export const Advanced = () => {
       return;
     }
 
-    let payload = { [field]: value };
+    let cleanValue = value;
+    if (field === 'advance' || field === 'advanceCut') {
+      let str = String(value ?? '').trim();
+      if (/^0+[0-9]+/.test(str)) {
+        str = str.replace(/^0+/, '');
+      }
+      cleanValue = str;
+    }
+
+    const payload = { [field]: cleanValue };
 
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== rowId) return r;
-        const updated = { ...r, [field]: value };
-
-        if (field === 'riderName') {
-          const match = companyRiders.find(
-            (cr) => cr.riderName && cr.riderName.toLowerCase() === String(value).trim().toLowerCase()
-          );
-          if (match?.riderId && !r.riderId) {
-            updated.riderId = match.riderId;
-            payload.riderId = match.riderId;
-          }
-        } else if (field === 'riderId') {
-          const match = companyRiders.find(
-            (cr) => cr.riderId && cr.riderId.toLowerCase() === String(value).trim().toLowerCase()
-          );
-          if (match?.riderName && !r.riderName) {
-            updated.riderName = match.riderName;
-            payload.riderName = match.riderName;
-          }
-        }
+        const updated = { ...r, [field]: cleanValue };
 
         if (field === 'advance' || field === 'advanceCut') {
-          const adv = field === 'advance' ? Number(value) || 0 : Number(r.advance) || 0;
-          const cut = field === 'advanceCut' ? Number(value) || 0 : Number(r.advanceCut) || 0;
+          const adv = field === 'advance' ? Number(cleanValue) || 0 : Number(r.advance) || 0;
+          const cut = field === 'advanceCut' ? Number(cleanValue) || 0 : Number(r.advanceCut) || 0;
           updated.remainingAmount = adv - cut;
         }
         return updated;
@@ -359,12 +216,6 @@ export const Advanced = () => {
       return;
     }
 
-    const targetCompanyId = selectedCompanyFilter || (activeCompanies[0]?.id || activeCompanies[0]?._id);
-    if (!targetCompanyId) {
-      toast.error('Please create or select an active company first.');
-      return;
-    }
-
     if (!newForm.riderName.trim()) {
       toast.error('Rider Name is required.');
       return;
@@ -372,9 +223,6 @@ export const Advanced = () => {
 
     try {
       const payload = {
-        companyId: targetCompanyId,
-        month: selectedMonthFilter,
-        financialYear: selectedFinancialYear,
         date: newForm.date || new Date().toISOString().split('T')[0],
         riderName: newForm.riderName.trim(),
         riderId: newForm.riderId.trim(),
@@ -447,10 +295,9 @@ export const Advanced = () => {
     'Remark',
   ];
 
-  const handleDownloadSample = (format = 'xlsx', targetCompany = null) => {
-    const comp = targetCompany || currentCompany;
-    const compName = (comp?.name || 'Company').trim().replace(/\s+/g, '_');
-    const filename = `${compName}_Advance_Sample_Template_${selectedMonthFilter}`;
+  const handleDownloadSample = (format = 'xlsx') => {
+    setIsSampleSheetMenuOpen(false);
+    const filename = `Advance_Sample_Template`;
     const sampleRows = [
       [new Date().toISOString().split('T')[0], 'Shubham Wasnik', '123456', 5000, 2000, 3000, 'payout cycle 1 cut'],
     ];
@@ -460,14 +307,13 @@ export const Advanced = () => {
     } else {
       downloadCSV(templateHeaders, sampleRows, filename);
     }
-    toast.success(`Downloaded ${comp?.name || 'Company'} sample advance template (${format.toUpperCase()})`);
+    toast.success(`Downloaded sample advance template (${format.toUpperCase()})`);
   };
 
   // Export Data
   const handleExport = (format) => {
     setIsExportMenuOpen(false);
-    const compName = (currentCompany?.name || 'Company').replace(/\s+/g, '_');
-    const filename = `${compName}_Advance_Details_${selectedMonthFilter}_${selectedFinancialYear}`;
+    const filename = `Advance_Details`;
 
     const headers = [
       'Date',
@@ -505,13 +351,6 @@ export const Advanced = () => {
 
     if (!canEdit) {
       notifyLocked('upload advance file');
-      e.target.value = '';
-      return;
-    }
-
-    const targetCompanyId = selectedCompanyFilter || (activeCompanies[0]?.id || activeCompanies[0]?._id);
-    if (!targetCompanyId) {
-      toast.error('Please select an active company first.');
       e.target.value = '';
       return;
     }
@@ -560,9 +399,6 @@ export const Advanced = () => {
         });
 
         const res = await apiClient.post(ENDPOINTS.ADVANCES.BULK_IMPORT, {
-          companyId: targetCompanyId,
-          month: selectedMonthFilter,
-          financialYear: selectedFinancialYear,
           rows: mappedRows,
         });
 
@@ -608,7 +444,7 @@ export const Advanced = () => {
               <button
                 type="button"
                 onClick={() => setIsBulkDeleteModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors shadow-xs"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors shadow-xs cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Selected ({selectedRowIds.length})</span>
@@ -616,12 +452,48 @@ export const Advanced = () => {
             )}
 
             {/* Download Sample Template Dropdown */}
-            <SampleTemplateDropdown
-              currentCompany={currentCompany}
-              companies={companies}
-              onDownload={handleDownloadSample}
-              label="Sample Sheet"
-            />
+            <div className="relative" ref={sampleSheetMenuRef}>
+              <div className="inline-flex rounded-xl shadow-xs border border-gray-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadSample('xlsx')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 border-r border-gray-200 transition-colors cursor-pointer select-none"
+                  title="Download Excel Template"
+                >
+                  <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Sample Sheet</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSampleSheetMenuOpen((prev) => !prev)}
+                  className="px-2 py-2 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors flex items-center cursor-pointer select-none"
+                  title="Choose Template Format"
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isSampleSheetMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+
+              {isSampleSheetMenuOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-gray-100 rounded-xl shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSample('xlsx')}
+                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="font-semibold">Excel Template</span>
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">.XLSX</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSample('csv')}
+                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="font-semibold">CSV Template</span>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">.CSV</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Hidden File Input for Upload */}
             <input
@@ -636,7 +508,7 @@ export const Advanced = () => {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5 text-blue-600" />
               <span>Import File</span>
@@ -647,7 +519,7 @@ export const Advanced = () => {
               <button
                 type="button"
                 onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-gray-500" />
                 <span>Export</span>
@@ -659,7 +531,7 @@ export const Advanced = () => {
                   <button
                     type="button"
                     onClick={() => handleExport('xlsx')}
-                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Excel (.xlsx)</span>
@@ -667,7 +539,7 @@ export const Advanced = () => {
                   <button
                     type="button"
                     onClick={() => handleExport('csv')}
-                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-blue-600" />
                     <span>CSV (.csv)</span>
@@ -675,6 +547,17 @@ export const Advanced = () => {
                 </div>
               )}
             </div>
+
+            {/* Send Mail Button */}
+            <button
+              type="button"
+              onClick={() => setIsEmailModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+              title="Send Exported Excel directly to Email"
+            >
+              <Mail className="w-3.5 h-3.5 text-rose-600" />
+              <span>Send Mail</span>
+            </button>
 
             {/* Add Record Button */}
             <button
@@ -694,48 +577,13 @@ export const Advanced = () => {
                 });
                 setIsAddModalOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-black hover:bg-gray-800 rounded-xl shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-black hover:bg-gray-800 rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Record</span>
             </button>
           </div>
         </div>
-
-        {/* Outstanding Advance Balances Alert Banner from Previous Months */}
-        {outstandingAdvances.length > 0 && (
-          <div className="mx-4 mt-4 p-3.5 bg-gradient-to-r from-amber-50 via-orange-50/70 to-amber-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <Zap className="w-4 h-4 fill-white" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-amber-950">
-                    {outstandingAdvances.length} Unpaid Advance Balance{outstandingAdvances.length > 1 ? 's' : ''} from Previous Month
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-mono font-bold text-[10px]">
-                    Total Pending: ₹{outstandingAdvances.reduce((s, o) => s + (Number(o.remainingAmount) || 0), 0).toLocaleString('en-IN')}
-                  </span>
-                </div>
-                <p className="text-[11px] text-amber-800/90 mt-0.5">
-                  Rider(s) have remaining advance from earlier months. Carry forward into <strong>{selectedMonthFilter}</strong> to continue deductions.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCarryIds(outstandingAdvances.map((o) => o.id));
-                setIsCarryForwardModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 active:bg-amber-800 rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>⚡ Carry Forward to {selectedMonthFilter}</span>
-            </button>
-          </div>
-        )}
 
         {/* KPI Stat Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b border-gray-100 bg-gray-50/50 shrink-0">
@@ -838,7 +686,7 @@ export const Advanced = () => {
                           value={row.date?.slice(0, 10) || ''}
                           disabled={!canEdit}
                           onChange={(e) => handleCellChange(row.id, 'date', e.target.value)}
-                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs text-gray-900 focus:outline-none transition-all"
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs text-gray-900 focus:outline-none transition-all cursor-pointer"
                         />
                       </td>
 
@@ -848,6 +696,7 @@ export const Advanced = () => {
                           type="text"
                           value={row.riderName || ''}
                           disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'riderName', e.target.value)}
                           placeholder="Rider Name"
                           className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs font-semibold text-gray-900 focus:outline-none transition-all"
@@ -860,6 +709,7 @@ export const Advanced = () => {
                           type="text"
                           value={row.riderId || ''}
                           disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'riderId', e.target.value)}
                           placeholder="e.g. 123456"
                           className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs font-mono font-medium text-gray-700 focus:outline-none transition-all"
@@ -874,9 +724,10 @@ export const Advanced = () => {
                             type="number"
                             min="0"
                             step="any"
-                            value={row.advance === 0 ? '' : row.advance}
+                            value={row.advance === 0 || row.advance === '0' ? '' : (row.advance ?? '')}
                             disabled={!canEdit}
                             placeholder="0"
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'advance', e.target.value)}
                             className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-gray-900 focus:outline-none transition-all"
                           />
@@ -891,9 +742,10 @@ export const Advanced = () => {
                             type="number"
                             min="0"
                             step="any"
-                            value={row.advanceCut === 0 ? '' : row.advanceCut}
+                            value={row.advanceCut === 0 || row.advanceCut === '0' ? '' : (row.advanceCut ?? '')}
                             disabled={!canEdit}
                             placeholder="0"
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'advanceCut', e.target.value)}
                             className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-emerald-700 focus:outline-none transition-all"
                           />
@@ -915,7 +767,8 @@ export const Advanced = () => {
                           type="text"
                           value={row.remark || ''}
                           disabled={!canEdit}
-                          placeholder="e.g. mene 2000 sfx ki payout cycle 1..."
+                          onFocus={(e) => e.target.select()}
+                          placeholder="e.g. payout cycle cut note..."
                           onChange={(e) => handleCellChange(row.id, 'remark', e.target.value)}
                           className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none transition-all"
                         />
@@ -970,13 +823,13 @@ export const Advanced = () => {
               <div>
                 <h3 className="text-base font-bold text-gray-900">Add Advance Record</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {currentCompany?.name || 'Company'} • {selectedMonthFilter}
+                  Record advance payment / deduction for rider
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -994,24 +847,17 @@ export const Advanced = () => {
                     required
                     value={newForm.date}
                     onChange={(e) => setNewForm({ ...newForm, date: e.target.value })}
-                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all"
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all cursor-pointer"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {/* Rider Name with Sleek Searchable Combobox */}
-                <div className="relative" ref={riderComboboxRef}>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-gray-700">
-                      Rider Name *
-                    </label>
-                    {companyRiders.length > 0 && (
-                      <span className="text-[10px] text-gray-400 font-medium">
-                        {currentCompany?.name} ({companyRiders.length})
-                      </span>
-                    )}
-                  </div>
+                {/* Rider Name */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Rider Name *
+                  </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
@@ -1019,136 +865,29 @@ export const Advanced = () => {
                       required
                       placeholder="e.g. Shubham Wasnik"
                       value={newForm.riderName}
-                      onFocus={() => {
-                        if (companyRiders.length > 0) setIsRiderSuggestionsOpen(true);
-                      }}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const matched = companyRiders.find(
-                          (r) => r.riderName && r.riderName.toLowerCase() === val.trim().toLowerCase()
-                        );
-                        setNewForm((prev) => ({
-                          ...prev,
-                          riderName: val,
-                          riderId: matched?.riderId ? matched.riderId : prev.riderId,
-                        }));
-                        if (companyRiders.length > 0) setIsRiderSuggestionsOpen(true);
-                      }}
-                      className="w-full pl-9 pr-7 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all bg-white font-medium"
+                      onChange={(e) => setNewForm({ ...newForm, riderName: e.target.value })}
+                      className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all bg-white font-medium"
                     />
-                    {companyRiders.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setIsRiderSuggestionsOpen(!isRiderSuggestionsOpen)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                      >
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform duration-150 ${
-                            isRiderSuggestionsOpen ? 'rotate-180 text-black' : ''
-                          }`}
-                        />
-                      </button>
-                    )}
                   </div>
-
-                  {/* Custom Floating Suggestion Menu */}
-                  {isRiderSuggestionsOpen && filteredModalRiders.length > 0 && (
-                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1 animate-in fade-in zoom-in-95 duration-100">
-                      <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100">
-                        {currentCompany?.name} Riders ({filteredModalRiders.length})
-                      </div>
-                      {filteredModalRiders.map((r, idx) => (
-                        <button
-                          key={r.riderId ? `rider-${r.riderId}` : `idx-${idx}`}
-                          type="button"
-                          onClick={() => {
-                            setNewForm((prev) => ({
-                              ...prev,
-                              riderName: r.riderName || prev.riderName,
-                              riderId: r.riderId || prev.riderId,
-                            }));
-                            setIsRiderSuggestionsOpen(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                            <span className="font-semibold text-gray-900 truncate">
-                              {r.riderName || 'Unknown Rider'}
-                            </span>
-                          </div>
-                          {r.riderId && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-mono font-bold shrink-0 ml-2">
-                              #{r.riderId}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 {/* Rider ID */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-gray-700">
-                      Rider ID
-                    </label>
-                    <span className="text-[10px] text-gray-400">Auto-filled</span>
-                  </div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Rider ID
+                  </label>
                   <div className="relative">
                     <Hash className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       placeholder="e.g. 123456"
                       value={newForm.riderId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const matched = companyRiders.find(
-                          (r) => r.riderId && r.riderId.toLowerCase() === val.trim().toLowerCase()
-                        );
-                        setNewForm((prev) => ({
-                          ...prev,
-                          riderId: val,
-                          riderName: matched?.riderName ? matched.riderName : prev.riderName,
-                        }));
-                      }}
+                      onChange={(e) => setNewForm({ ...newForm, riderId: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all font-mono bg-white font-medium"
                     />
                   </div>
                 </div>
               </div>
-
-              {/* Previous Unpaid Advance Detected Alert Card */}
-              {selectedRiderOutstanding && (
-                <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
-                  <div className="flex items-center gap-2.5">
-                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                    <div>
-                      <div className="text-xs font-semibold text-amber-950">
-                        Previous Pending Balance: <span className="font-black text-amber-700">₹{selectedRiderOutstanding.remainingAmount.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="text-[10px] text-amber-700">
-                        From {selectedRiderOutstanding.previousMonth} (Advance: ₹{selectedRiderOutstanding.previousAdvance}, Cut: ₹{selectedRiderOutstanding.previousAdvanceCut})
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewForm((prev) => ({
-                        ...prev,
-                        advance: selectedRiderOutstanding.remainingAmount,
-                        advanceCut: '',
-                        remark: `Carried forward from ${selectedRiderOutstanding.previousMonth} (Prev Bal: ₹${selectedRiderOutstanding.remainingAmount})`,
-                      }));
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-2xs shrink-0 cursor-pointer"
-                  >
-                    Use ₹{selectedRiderOutstanding.remainingAmount}
-                  </button>
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1161,9 +900,14 @@ export const Advanced = () => {
                       type="number"
                       min="0"
                       step="any"
-                      placeholder="5000"
-                      value={newForm.advance}
-                      onChange={(e) => setNewForm({ ...newForm, advance: e.target.value })}
+                      placeholder="0"
+                      value={newForm.advance === 0 || newForm.advance === '0' ? '' : (newForm.advance ?? '')}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let clean = e.target.value;
+                        if (/^0+[0-9]+/.test(clean)) clean = clean.replace(/^0+/, '');
+                        setNewForm({ ...newForm, advance: clean });
+                      }}
                       className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all font-bold"
                     />
                   </div>
@@ -1179,9 +923,14 @@ export const Advanced = () => {
                       type="number"
                       min="0"
                       step="any"
-                      placeholder="2000"
-                      value={newForm.advanceCut}
-                      onChange={(e) => setNewForm({ ...newForm, advanceCut: e.target.value })}
+                      placeholder="0"
+                      value={newForm.advanceCut === 0 || newForm.advanceCut === '0' ? '' : (newForm.advanceCut ?? '')}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let clean = e.target.value;
+                        if (/^0+[0-9]+/.test(clean)) clean = clean.replace(/^0+/, '');
+                        setNewForm({ ...newForm, advanceCut: clean });
+                      }}
                       className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all font-bold text-emerald-600"
                     />
                   </div>
@@ -1204,7 +953,7 @@ export const Advanced = () => {
                   <MessageSquare className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
                   <textarea
                     rows="2"
-                    placeholder="e.g. mene 2000 sfx ki payout cycle 1..."
+                    placeholder="e.g. payout cycle cut note..."
                     value={newForm.remark}
                     onChange={(e) => setNewForm({ ...newForm, remark: e.target.value })}
                     className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all resize-none"
@@ -1216,141 +965,18 @@ export const Advanced = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                  className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-medium text-white bg-black hover:bg-gray-800 rounded-xl shadow-xs transition-colors"
+                  className="px-4 py-2 text-xs font-medium text-white bg-black hover:bg-gray-800 rounded-xl shadow-xs transition-colors cursor-pointer"
                 >
                   Save Record
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Carry Forward Pending Advances Modal */}
-      {isCarryForwardModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white border border-gray-200 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between shrink-0 bg-amber-50/50">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
-                  <Zap className="w-4 h-4 fill-white" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">Carry Forward Advances</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Target Month: <strong className="text-gray-800">{selectedMonthFilter}</strong> • {currentCompany?.name || 'Company'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCarryForwardModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto flex-1 space-y-3">
-              <div className="flex items-center justify-between text-xs text-gray-500 pb-1">
-                <span>Select riders with unpaid balances to carry forward into {selectedMonthFilter}:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedCarryIds.length === outstandingAdvances.length) {
-                      setSelectedCarryIds([]);
-                    } else {
-                      setSelectedCarryIds(outstandingAdvances.map((o) => o.id));
-                    }
-                  }}
-                  className="text-xs font-bold text-black hover:underline cursor-pointer"
-                >
-                  {selectedCarryIds.length === outstandingAdvances.length ? 'Deselect All' : 'Select All'}
-                </button>
-              </div>
-
-              <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden">
-                {outstandingAdvances.map((item) => {
-                  const isChecked = selectedCarryIds.includes(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        setSelectedCarryIds((prev) =>
-                          prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id]
-                        );
-                      }}
-                      className={`p-3 flex items-center justify-between gap-3 cursor-pointer hover:bg-amber-50/40 transition-colors ${
-                        isChecked ? 'bg-amber-50/20' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}}
-                          className="w-4 h-4 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
-                        />
-                        <div>
-                          <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                            <span>{item.riderName}</span>
-                            {item.riderId && (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                                #{item.riderId}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-gray-400 mt-0.5">
-                            From: <span className="font-semibold text-gray-600">{item.previousMonth}</span> (Adv: ₹{item.previousAdvance}, Cut: ₹{item.previousAdvanceCut})
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <span className="text-xs font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                          ₹{item.remainingAmount.toLocaleString('en-IN')}
-                        </span>
-                        <span className="block text-[10px] text-gray-400 mt-0.5">Opening Bal</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80 text-[11px] text-gray-600">
-                💡 <strong>How it works:</strong> Each selected rider will get a new record in <strong>{selectedMonthFilter}</strong> with <em>Advance = ₹Remaining Amount</em>, <em>Advance Cut = ₹0</em>, and <em>Remaining = ₹Remaining Amount</em>. When they repay this month (e.g. ₹300), just enter 300 in Advance Cut and the remaining updates live!
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between shrink-0">
-              <div className="text-xs text-gray-500">
-                Selected: <strong className="text-gray-900">{selectedCarryIds.length}</strong> of {outstandingAdvances.length} riders
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCarryForwardModalOpen(false)}
-                  className="px-3.5 py-2 text-xs font-medium text-gray-600 hover:bg-gray-200/60 rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={selectedCarryIds.length === 0 || carryingForward}
-                  onClick={() => handleCarryForward()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-xs transition-colors"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>{carryingForward ? 'Carrying Forward...' : `Carry Forward (${selectedCarryIds.length})`}</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -1362,8 +988,8 @@ export const Advanced = () => {
         onConfirm={handleConfirmDelete}
         title="Delete Advance Record"
         message={`Are you sure you want to delete the advance entry for "${rowToDelete?.riderName || 'this rider'}"? This action cannot be undone.`}
-        confirmText="Delete Record"
-        confirmVariant="danger"
+        confirmLabel="Delete Record"
+        variant="danger"
       />
 
       {/* Bulk Delete Confirmation Modal */}
@@ -1373,8 +999,33 @@ export const Advanced = () => {
         onConfirm={handleConfirmBulkDelete}
         title="Bulk Delete Advance Records"
         message={`Are you sure you want to delete ${selectedRowIds.length} selected advance records? This cannot be undone.`}
-        confirmText={`Delete ${selectedRowIds.length} Records`}
-        confirmVariant="danger"
+        confirmLabel={`Delete ${selectedRowIds.length} Records`}
+        variant="danger"
+      />
+
+      {/* Send Email Modal */}
+      <SendEmailModal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        reportTitle="Advance Details"
+        reportType="Rider Advance Ledger"
+        sheetName="Advance Details"
+        filename="Advance_Details.xlsx"
+        metadata={[]}
+        summaryCards={[
+          { label: 'Total Advances', value: displayedRows.length },
+          { label: 'Total Advance Amount', value: formatCurrency(totals.advance), highlight: true, color: 'emerald' },
+        ]}
+        headers={['Date', 'Rider Name', 'Rider ID', 'Advance', 'Advance Cut', 'Remaining Amount', 'Remark']}
+        rows={displayedRows.map((r) => [
+          r.date || '',
+          r.riderName || '',
+          r.riderId || '',
+          r.advance || 0,
+          r.advanceCut || 0,
+          (Number(r.advance) || 0) - (Number(r.advanceCut) || 0),
+          r.remark || '',
+        ])}
       />
     </div>
   );

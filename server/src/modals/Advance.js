@@ -5,12 +5,12 @@ const advanceSchema = new mongoose.Schema(
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Company',
-      required: true,
+      required: false,
       index: true,
     },
     month: {
       type: String,
-      required: true,
+      required: false,
       index: true,
     },
     financialYear: {
@@ -25,7 +25,7 @@ const advanceSchema = new mongoose.Schema(
     },
     riderName: {
       type: String,
-      required: [true, 'Rider Name is required'],
+      default: '',
       trim: true,
     },
     riderId: {

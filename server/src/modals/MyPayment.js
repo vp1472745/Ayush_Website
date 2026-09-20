@@ -20,7 +20,7 @@ const myPaymentSchema = new mongoose.Schema(
     },
     cycle: {
       type: String,
-      required: [true, 'Cycle is required'],
+      default: '',
       trim: true,
     },
     amount: {

@@ -5,7 +5,7 @@ const hubExpenseSchema = new mongoose.Schema(
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Company',
-      required: true,
+      required: false,
       index: true,
     },
     month: {
@@ -15,7 +15,7 @@ const hubExpenseSchema = new mongoose.Schema(
     },
     expenseName: {
       type: String,
-      required: [true, 'Expense name is required'],
+      default: '',
       trim: true,
     },
     amount: {
@@ -26,6 +26,11 @@ const hubExpenseSchema = new mongoose.Schema(
     date: {
       type: String,
       default: () => new Date().toISOString().split('T')[0],
+    },
+    remark: {
+      type: String,
+      default: '',
+      trim: true,
     },
   },
   {

@@ -172,24 +172,29 @@ const updateMyPayment = async (req, res, next) => {
       throw new Error('Payment record not found.');
     }
 
-    if (req.body.cycle !== undefined && req.body.cycle.trim() !== paymentDoc.cycle) {
-      const existing = await MyPayment.findOne({
-        _id: { $ne: req.params.id },
-        companyId: req.body.companyId || paymentDoc.companyId,
-        month: req.body.month || paymentDoc.month,
-        cycle: req.body.cycle.trim(),
-      });
-      if (existing) {
-        res.status(400);
-        throw new Error(`Cycle '${req.body.cycle.trim()}' is already used for this company in this month.`);
+    if (req.body.cycle !== undefined) {
+      const trimmedCycle = (req.body.cycle || '').trim();
+      if (trimmedCycle && trimmedCycle !== paymentDoc.cycle) {
+        const existing = await MyPayment.findOne({
+          _id: { $ne: req.params.id },
+          companyId: req.body.companyId || paymentDoc.companyId,
+          month: req.body.month || paymentDoc.month,
+          cycle: trimmedCycle,
+        });
+        if (existing) {
+          res.status(400);
+          throw new Error(`Cycle '${trimmedCycle}' is already used for this company in this month.`);
+        }
       }
-      paymentDoc.cycle = req.body.cycle.trim();
+      paymentDoc.cycle = req.body.cycle;
     }
 
     if (req.body.amount !== undefined) paymentDoc.amount = Number(req.body.amount) || 0;
     if (req.body.loss !== undefined) paymentDoc.loss = Number(req.body.loss) || 0;
     if (req.body.status !== undefined) paymentDoc.status = req.body.status;
-    if (req.body.remarks !== undefined) paymentDoc.remarks = (req.body.remarks || '').trim();
+    if (req.body.remarks !== undefined || req.body.remark !== undefined) {
+      paymentDoc.remarks = (req.body.remarks ?? req.body.remark ?? '').toString().trim();
+    }
     if (req.body.month !== undefined) paymentDoc.month = req.body.month;
     if (req.body.financialYear !== undefined) paymentDoc.financialYear = req.body.financialYear;
     if (req.body.companyId !== undefined) paymentDoc.companyId = req.body.companyId;

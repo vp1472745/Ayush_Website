@@ -7,8 +7,10 @@ import {
   FileText,
   Inbox,
   Trash2,
+  ChevronDown,
+  Mail,
 } from 'lucide-react';
-import { ConfirmationModal, Pagination, SampleTemplateDropdown } from '../components/common';
+import { ConfirmationModal, Pagination, SendEmailModal } from '../components/common';
 import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
@@ -19,7 +21,7 @@ import apiClient from '../api/apiClient';
 import { ENDPOINTS } from '../api/endpoints';
 
 export const Expenses = () => {
-  const { companies, selectedCompanyFilter, selectedMonthFilter } = useCompany();
+  const { selectedMonthFilter } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
@@ -30,14 +32,21 @@ export const Expenses = () => {
   const [pageSize, setPageSize] = useState(10);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const templateMenuRef = useRef(null);
 
-  // Filtered active companies
-  const activeCompanies = useMemo(() => {
-    return companies.filter((c) => c.status === 'Active');
-  }, [companies]);
-
-  const currentCompany = activeCompanies.find((c) => c.id === selectedCompanyFilter) || activeCompanies[0];
+  // Close template menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (templateMenuRef.current && !templateMenuRef.current.contains(e.target)) {
+        setIsTemplateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Fetch hub expenses from backend
   const fetchHubExpenses = useCallback(async () => {
@@ -45,8 +54,9 @@ export const Expenses = () => {
     try {
       setLoading(true);
       const params = {};
-      if (selectedCompanyFilter !== 'all') params.companyId = selectedCompanyFilter;
-      if (selectedMonthFilter !== 'all') params.month = selectedMonthFilter;
+      if (selectedMonthFilter && selectedMonthFilter !== 'all') {
+        params.month = selectedMonthFilter;
+      }
 
       const res = await apiClient.get(ENDPOINTS.HUB_EXPENSES.GET_ALL, { params });
       if (res.success && Array.isArray(res.data)) {
@@ -61,7 +71,7 @@ export const Expenses = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter]);
+  }, [isAuthenticated, selectedMonthFilter]);
 
   useEffect(() => {
     fetchHubExpenses();
@@ -73,6 +83,7 @@ export const Expenses = () => {
       const matchSearch = !searchQuery || 
         r.expenseName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.date?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.remark?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.amount?.toString().includes(searchQuery);
       return matchSearch;
     });
@@ -95,12 +106,21 @@ export const Expenses = () => {
       return;
     }
 
+    let cleanValue = value;
+    if (field === 'amount') {
+      let str = String(value ?? '').trim();
+      if (/^0+[0-9]+/.test(str)) {
+        str = str.replace(/^0+/, '');
+      }
+      cleanValue = str;
+    }
+
     setRows((prev) =>
-      prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r))
+      prev.map((r) => (r.id === rowId ? { ...r, [field]: cleanValue } : r))
     );
 
     try {
-      await apiClient.patch(ENDPOINTS.HUB_EXPENSES.UPDATE(rowId), { [field]: value });
+      await apiClient.patch(ENDPOINTS.HUB_EXPENSES.UPDATE(rowId), { [field]: cleanValue });
     } catch (error) {
       toast.error(error.message || 'Failed to update expense');
       fetchHubExpenses();
@@ -114,27 +134,18 @@ export const Expenses = () => {
       return;
     }
 
-    const targetCompanyId = selectedCompanyFilter === 'all'
-      ? (activeCompanies[0]?.id || activeCompanies[0]?._id)
-      : selectedCompanyFilter;
-
-    if (!targetCompanyId) {
-      toast.error('Please create or select an active company first.');
-      return;
-    }
-
     try {
       const newExpensePayload = {
-        companyId: targetCompanyId,
         month: selectedMonthFilter,
         expenseName: 'New Expense',
         amount: 0,
         date: new Date().toISOString().split('T')[0],
+        remark: '',
       };
 
       const res = await apiClient.post(ENDPOINTS.HUB_EXPENSES.CREATE, newExpensePayload);
       if (res.success && res.data) {
-        const created = { ...res.data, id: res.data._id };
+        const created = { ...res.data, id: res.data._id || res.data.id };
         setRows((prev) => [created, ...prev]);
         toast.success('New expense record added.');
       }
@@ -175,12 +186,13 @@ export const Expenses = () => {
       return;
     }
 
-    const headers = ['Expense Name', 'Amount', 'Date'];
+    const headers = ['Expense Name', 'Amount', 'Date', 'Remark'];
     const csvRows = displayedRows.map((r) => {
       return [
         `"${r.expenseName || ''}"`,
         r.amount || 0,
-        `"${r.date || ''}"`
+        `"${r.date || ''}"`,
+        `"${r.remark || ''}"`
       ].join(',');
     });
 
@@ -188,28 +200,25 @@ export const Expenses = () => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const compName = selectedCompanyFilter === 'all' ? 'All_Companies' : (currentCompany?.name || 'Company').replace(/\s+/g, '_');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Hub_Expenses_${selectedMonthFilter}_${compName}.csv`);
+    link.setAttribute('download', `Hub_Expenses_${selectedMonthFilter}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     toast.success(`Exported ${displayedRows.length} expense records to CSV!`);
   };
 
-  // Download Sample Template (company-specific)
-  const handleDownloadTemplate = (format = 'xlsx', targetCompany = null) => {
-    const comp = targetCompany || currentCompany;
-    const compName = (comp?.name || 'Company').trim().replace(/\s+/g, '_');
-    const headers = ['Expense Name', 'Amount', 'Date'];
-    const filename = `Hub_Expense_Template_${compName}_${selectedMonthFilter}`;
+  // Download Sample Template
+  const handleDownloadTemplate = (format = 'xlsx') => {
+    const headers = ['Expense Name', 'Amount', 'Date', 'Remark'];
+    const filename = `Hub_Expense_Template_${selectedMonthFilter}`;
 
     if (format === 'xlsx') {
       downloadExcel(headers, [], filename);
     } else {
       downloadCSV(headers, [], filename);
     }
-    toast.success(`Downloaded ${compName} expense template (${format.toUpperCase()})`);
+    toast.success(`Downloaded Hub expense template (${format.toUpperCase()})`);
   };
 
   // Import Excel/CSV File
@@ -238,15 +247,6 @@ export const Expenses = () => {
           return;
         }
 
-        const targetCompanyId = selectedCompanyFilter === 'all'
-          ? (activeCompanies[0]?.id || activeCompanies[0]?._id)
-          : selectedCompanyFilter;
-
-        if (!targetCompanyId) {
-          toast.error('Please create or select an active company first.');
-          return;
-        }
-
         const importedRows = [];
         for (let i = 1; i < lines.length; i++) {
           const rawLine = lines[i];
@@ -255,18 +255,19 @@ export const Expenses = () => {
             const expenseName = cols[0] || `Expense ${i}`;
             const amount = Number(cols[1]) || 0;
             const date = cols[2] || new Date().toISOString().split('T')[0];
+            const remark = cols[3] || '';
 
             importedRows.push({
               expenseName,
               amount,
               date,
+              remark,
             });
           }
         }
 
         if (importedRows.length > 0) {
           const res = await apiClient.post(ENDPOINTS.HUB_EXPENSES.BULK_IMPORT, {
-            companyId: targetCompanyId,
             month: selectedMonthFilter,
             rows: importedRows,
           });
@@ -310,7 +311,7 @@ export const Expenses = () => {
           />
         </div>
 
-        {/* Soft Pastel Action Buttons */}
+        {/* Action Buttons */}
         <div className="flex items-center flex-wrap gap-1.5">
           <input
             type="file"
@@ -320,12 +321,55 @@ export const Expenses = () => {
             className="hidden"
           />
 
-          <SampleTemplateDropdown
-            currentCompany={currentCompany}
-            companies={companies}
-            onDownload={handleDownloadTemplate}
-            label="Sample Template"
-          />
+          {/* Sample Template Dropdown */}
+          <div className="relative inline-flex" ref={templateMenuRef}>
+            <div className="inline-flex rounded-lg shadow-2xs border border-gray-200 bg-white overflow-hidden">
+              <button
+                type="button"
+                onClick={() => handleDownloadTemplate('xlsx')}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 border-r border-gray-200 transition-colors cursor-pointer select-none"
+                title="Download Excel Template"
+              >
+                <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Sample Template</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsTemplateMenuOpen((prev) => !prev)}
+                className="px-1.5 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors flex items-center cursor-pointer select-none"
+                title="Choose Format"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isTemplateMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {isTemplateMenuOpen && (
+              <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-1.5 w-44 bg-white border border-gray-100 rounded-xl shadow-xl py-1 z-50">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDownloadTemplate('xlsx');
+                    setIsTemplateMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center justify-between cursor-pointer"
+                >
+                  <span className="font-semibold">Excel Template</span>
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">.XLSX</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDownloadTemplate('csv');
+                    setIsTemplateMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center justify-between cursor-pointer"
+                >
+                  <span className="font-semibold">CSV Template</span>
+                  <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">.CSV</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -343,6 +387,17 @@ export const Expenses = () => {
           >
             <Download className="w-3.5 h-3.5 text-[#059669]" />
             <span>Export CSV</span>
+          </button>
+
+          {/* Send Mail Button */}
+          <button
+            type="button"
+            onClick={() => setIsEmailModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+            title="Send Exported Excel directly to Email"
+          >
+            <Mail className="w-3.5 h-3.5 text-rose-600" />
+            <span>Send Mail</span>
           </button>
 
           <button
@@ -367,6 +422,7 @@ export const Expenses = () => {
                 <th className="py-1.5 px-3 whitespace-nowrap">Expense Name</th>
                 <th className="py-1.5 px-3 text-right whitespace-nowrap">Amount</th>
                 <th className="py-1.5 px-3 whitespace-nowrap">Date</th>
+                <th className="py-1.5 px-3 whitespace-nowrap">Remark</th>
                 <th className="py-1.5 px-2 text-center text-gray-500 font-semibold w-10 whitespace-nowrap">Action</th>
               </tr>
             </thead>
@@ -375,7 +431,7 @@ export const Expenses = () => {
             <tbody className="divide-y divide-gray-100">
               {paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-gray-500">
+                  <td colSpan={6} className="py-12 text-center text-gray-500">
                     <div className="w-8 h-8 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center mx-auto mb-1.5">
                       <Inbox className="w-4 h-4" />
                     </div>
@@ -405,6 +461,7 @@ export const Expenses = () => {
                           type="text"
                           value={row.expenseName || ''}
                           disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'expenseName', e.target.value)}
                           className="w-full px-2.5 py-1 text-xs font-semibold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                           placeholder="Expense Name / Description"
@@ -417,8 +474,9 @@ export const Expenses = () => {
                           <span className="text-gray-400 font-medium">₹</span>
                           <input
                             type="number"
-                            value={row.amount ?? ''}
+                            value={row.amount === 0 || row.amount === '0' ? '' : (row.amount ?? '')}
                             disabled={!canEdit}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'amount', e.target.value)}
                             className="w-24 px-2.5 py-1 text-xs text-right font-bold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                             placeholder="0"
@@ -434,6 +492,19 @@ export const Expenses = () => {
                           disabled={!canEdit}
                           onChange={(e) => handleCellChange(row.id, 'date', e.target.value)}
                           className="w-36 px-2.5 py-1 text-xs font-medium text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all cursor-pointer"
+                        />
+                      </td>
+
+                      {/* Col 4: Remark (Editable) */}
+                      <td className="py-1 px-3 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={row.remark || ''}
+                          disabled={!canEdit}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => handleCellChange(row.id, 'remark', e.target.value)}
+                          className="w-full min-w-[150px] px-2.5 py-1 text-xs font-medium text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
+                          placeholder="Enter remark"
                         />
                       </td>
 
@@ -456,7 +527,7 @@ export const Expenses = () => {
               {/* Spacer row only when rows < pageSize to absorb space cleanly */}
               {paginatedRows.length > 0 && paginatedRows.length < pageSize && (
                 <tr className="h-full border-none pointer-events-none">
-                  <td colSpan={5} className="p-0 border-none bg-transparent"></td>
+                  <td colSpan={6} className="p-0 border-none bg-transparent"></td>
                 </tr>
               )}
             </tbody>
@@ -477,6 +548,7 @@ export const Expenses = () => {
                   <td className="py-1.5 px-3 text-gray-500 text-xs whitespace-nowrap">
                     {selectedMonthFilter}
                   </td>
+                  <td className="py-1.5 px-3"></td>
                   <td className="py-1.5 px-2"></td>
                 </tr>
               </tfoot>
@@ -509,6 +581,25 @@ export const Expenses = () => {
         message={`Are you sure you want to delete "${rowToDelete?.expenseName || 'this expense'}"? This action cannot be undone.`}
         confirmLabel="Yes, Delete"
         variant="danger"
+      />
+
+      {/* Send Email Modal */}
+      <SendEmailModal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        reportTitle="Hub Expenses"
+        reportType="Operational Expense Ledger"
+        sheetName="Hub Expenses"
+        filename={`Hub_Expenses_${selectedMonthFilter || 'All_Months'}.xlsx`}
+        metadata={[
+          { label: 'Period', value: selectedMonthFilter || 'All Months' },
+        ]}
+        summaryCards={[
+          { label: 'Total Records', value: displayedRows.length },
+          { label: 'Total Expenses', value: formatCurrency(totalExpenses), highlight: true, color: 'emerald' },
+        ]}
+        headers={['Expense Name', 'Amount', 'Date', 'Remark']}
+        rows={displayedRows.map((r) => [r.expenseName || '', Number(r.amount) || 0, r.date || '', r.remark || ''])}
       />
     </div>
   );

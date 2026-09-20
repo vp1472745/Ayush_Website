@@ -83,6 +83,11 @@ export const ENDPOINTS = {
     DELETE: (id) => `${API_BASE_URL}/my-payments/${id}`,
   },
 
+  // 9. Email Report Dispatch
+  EMAIL: {
+    SEND_REPORT: `${API_BASE_URL}/email/send-report`,
+  },
+
   // Health check
   HEALTH: `${API_BASE_URL}/health`,
 };

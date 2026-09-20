@@ -12,9 +12,10 @@ import {
   DollarSign,
   AlertCircle,
   Check,
+  Mail,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ConfirmationModal, Pagination, SampleTemplateDropdown, CustomDropdown } from '../components/common';
+import { ConfirmationModal, Pagination, SampleTemplateDropdown, CustomDropdown, SendEmailModal } from '../components/common';
 import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
@@ -184,6 +185,7 @@ export const PaymentPayout = () => {
   const [selectedRowIds, setSelectedRowIds] = useState([]);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isSampleMenuOpen, setIsSampleMenuOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -335,6 +337,21 @@ export const PaymentPayout = () => {
     });
   }, [rows, searchQuery]);
 
+  // Totals calculation
+  const totals = useMemo(() => {
+    return displayedRows.reduce(
+      (acc, r) => {
+        const amt = Number(r.amount) || 0;
+        const lss = Number(r.loss) || 0;
+        acc.amount += amt;
+        acc.loss += lss;
+        acc.finalPayout += amt - lss;
+        return acc;
+      },
+      { amount: 0, loss: 0, finalPayout: 0 }
+    );
+  }, [displayedRows]);
+
   // Pagination calculation
   const totalItems = displayedRows.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -373,17 +390,26 @@ export const PaymentPayout = () => {
       return;
     }
 
+    let cleanValue = value;
+    if (field === 'amount' || field === 'loss') {
+      let str = String(value ?? '').trim();
+      if (/^0+[0-9]+/.test(str)) {
+        str = str.replace(/^0+/, '');
+      }
+      cleanValue = str;
+    }
+
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== rowId) return r;
-        const updated = { ...r, [field]: value };
+        const updated = { ...r, [field]: cleanValue };
         if (field === 'amount' || field === 'loss') {
-          const amt = field === 'amount' ? Number(value) || 0 : Number(r.amount) || 0;
-          const ls = field === 'loss' ? Number(value) || 0 : Number(r.loss) || 0;
+          const amt = field === 'amount' ? Number(cleanValue) || 0 : Number(r.amount) || 0;
+          const ls = field === 'loss' ? Number(cleanValue) || 0 : Number(r.loss) || 0;
           updated.finalPayable = amt - ls;
         }
         if (field === 'companyId') {
-          const comp = companies.find((c) => (c.id || c._id) === value);
+          const comp = companies.find((c) => (c.id || c._id) === cleanValue);
           if (comp) {
             updated.companyName = comp.name;
             const cycleOpts = getCycleOptions(comp.name);
@@ -395,7 +421,7 @@ export const PaymentPayout = () => {
     );
 
     try {
-      await apiClient.patch(ENDPOINTS.MY_PAYMENTS.UPDATE(rowId), { [field]: value });
+      await apiClient.patch(ENDPOINTS.MY_PAYMENTS.UPDATE(rowId), { [field]: cleanValue });
     } catch (error) {
       toast.error(error.message || 'Failed to update payment record');
       fetchPayments();
@@ -517,7 +543,7 @@ export const PaymentPayout = () => {
   };
 
   // Sample template headers & dynamic row generation by company
-  const templateHeaders = ['Company', 'Cycle', 'Amount', 'Loss', 'Final Payable'];
+  const templateHeaders = ['Company', 'Cycle', 'Amount', 'Loss', 'Final Payable', 'Remark'];
 
   const generateSampleRowsForCompany = (comp) => {
     const compName = (comp?.name || currentCompany?.name || 'Company').trim();
@@ -525,16 +551,16 @@ export const PaymentPayout = () => {
 
     if (isValmo) {
       return [
-        [compName, 'Week 1', 50000, 10000, 40000],
-        [compName, 'Week 2', 45000, 5000, 40000],
-        [compName, 'Week 3', 60000, 8000, 52000],
-        [compName, 'Week 4', 55000, 7000, 48000],
+        [compName, 'Week 1', 50000, 10000, 40000, 'Cycle 1 payout'],
+        [compName, 'Week 2', 45000, 5000, 40000, 'Cycle 2 payout'],
+        [compName, 'Week 3', 60000, 8000, 52000, 'Cycle 3 payout'],
+        [compName, 'Week 4', 55000, 7000, 48000, 'Cycle 4 payout'],
       ];
     }
 
     return [
-      [compName, 'Cycle 1 (1st - 15th)', 50000, 10000, 40000],
-      [compName, 'Cycle 2 (16th - End of Month)', 60000, 8000, 52000],
+      [compName, 'Cycle 1 (1st - 15th)', 50000, 10000, 40000, 'Cycle 1 payout'],
+      [compName, 'Cycle 2 (16th - End of Month)', 60000, 8000, 52000, 'Cycle 2 payout'],
     ];
   };
 
@@ -560,13 +586,14 @@ export const PaymentPayout = () => {
     const compName = (currentCompany?.name || 'Company').replace(/\s+/g, '_');
     const filename = `${compName}_Payment_Details_${selectedMonthFilter}_${selectedFinancialYear}`;
 
-    const headers = ['Company', 'Cycle', 'Amount', 'Loss', 'Final Payable'];
+    const headers = ['Company', 'Cycle', 'Amount', 'Loss', 'Final Payable', 'Remark'];
     const dataRows = displayedRows.map((r) => [
       r.companyName || '',
       r.cycle || '',
       r.amount || 0,
       r.loss || 0,
       (Number(r.amount) || 0) - (Number(r.loss) || 0),
+      r.remarks || r.remark || '',
     ]);
 
     if (format === 'xlsx') {
@@ -723,7 +750,7 @@ export const PaymentPayout = () => {
               <button
                 type="button"
                 onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-gray-500" />
                 <span>Export</span>
@@ -735,7 +762,7 @@ export const PaymentPayout = () => {
                   <button
                     type="button"
                     onClick={() => handleExport('xlsx')}
-                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Excel (.xlsx)</span>
@@ -743,7 +770,7 @@ export const PaymentPayout = () => {
                   <button
                     type="button"
                     onClick={() => handleExport('csv')}
-                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full text-left px-3.5 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-blue-600" />
                     <span>CSV (.csv)</span>
@@ -751,6 +778,17 @@ export const PaymentPayout = () => {
                 </div>
               )}
             </div>
+
+            {/* Send Mail Button */}
+            <button
+              type="button"
+              onClick={() => setIsEmailModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+              title="Send Exported Excel directly to Email"
+            >
+              <Mail className="w-3.5 h-3.5 text-rose-600" />
+              <span>Send Mail</span>
+            </button>
 
             {/* Add Record Button */}
             <button
@@ -788,20 +826,21 @@ export const PaymentPayout = () => {
                 <th className="py-3.5 px-4 min-w-[150px]">Amount</th>
                 <th className="py-3.5 px-4 min-w-[150px]">Loss</th>
                 <th className="py-3.5 px-4 min-w-[160px]">Final Payable</th>
+                <th className="py-3.5 px-4 min-w-[180px]">Remark</th>
                 <th className="py-3.5 px-4 w-16 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-gray-400">
+                  <td colSpan="8" className="py-12 text-center text-gray-400">
                     <div className="inline-block animate-spin rounded-full h-6 w-6 border-2 border-black border-t-transparent mb-2" />
                     <p>Loading payment cycles...</p>
                   </td>
                 </tr>
               ) : paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-16 text-center">
+                  <td colSpan="8" className="py-16 text-center">
                     <div className="w-12 h-12 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center mx-auto mb-3">
                       <Inbox className="w-6 h-6" />
                     </div>
@@ -867,9 +906,10 @@ export const PaymentPayout = () => {
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
                           <input
                             type="number"
-                            value={row.amount === 0 ? '' : row.amount}
+                            value={row.amount === 0 || row.amount === '0' ? '' : (row.amount ?? '')}
                             disabled={!canEdit}
                             placeholder="0"
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'amount', e.target.value)}
                             className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-gray-900 focus:outline-none transition-all"
                           />
@@ -882,9 +922,10 @@ export const PaymentPayout = () => {
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
                           <input
                             type="number"
-                            value={row.loss === 0 ? '' : row.loss}
+                            value={row.loss === 0 || row.loss === '0' ? '' : (row.loss ?? '')}
                             disabled={!canEdit}
                             placeholder="0"
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'loss', e.target.value)}
                             className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-red-600 focus:outline-none transition-all"
                           />
@@ -896,6 +937,19 @@ export const PaymentPayout = () => {
                         <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           {formatCurrency(finalPay)}
                         </span>
+                      </td>
+
+                      {/* Remark */}
+                      <td className="py-3 px-4">
+                        <input
+                          type="text"
+                          value={row.remarks || row.remark || ''}
+                          disabled={!canEdit}
+                          placeholder="Enter remark"
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => handleCellChange(row.id, 'remarks', e.target.value)}
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2.5 py-1 text-xs font-medium text-gray-800 focus:outline-none transition-all"
+                        />
                       </td>
 
                       {/* Action */}
@@ -1048,9 +1102,14 @@ export const PaymentPayout = () => {
                       min="0"
                       step="any"
                       required
-                      placeholder="50000"
-                      value={newForm.amount}
-                      onChange={(e) => setNewForm({ ...newForm, amount: e.target.value })}
+                      placeholder="0"
+                      value={newForm.amount === 0 || newForm.amount === '0' ? '' : (newForm.amount ?? '')}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let clean = e.target.value;
+                        if (/^0+[0-9]+/.test(clean)) clean = clean.replace(/^0+/, '');
+                        setNewForm({ ...newForm, amount: clean });
+                      }}
                       className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all font-bold"
                     />
                   </div>
@@ -1066,9 +1125,14 @@ export const PaymentPayout = () => {
                       type="number"
                       min="0"
                       step="any"
-                      placeholder="10000"
-                      value={newForm.loss}
-                      onChange={(e) => setNewForm({ ...newForm, loss: e.target.value })}
+                      placeholder="0"
+                      value={newForm.loss === 0 || newForm.loss === '0' ? '' : (newForm.loss ?? '')}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        let clean = e.target.value;
+                        if (/^0+[0-9]+/.test(clean)) clean = clean.replace(/^0+/, '');
+                        setNewForm({ ...newForm, loss: clean });
+                      }}
                       className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black transition-all font-bold text-red-600"
                     />
                   </div>
@@ -1128,6 +1192,32 @@ export const PaymentPayout = () => {
         message={`Are you sure you want to delete ${selectedRowIds.length} selected payment records? This cannot be undone.`}
         confirmText={`Delete ${selectedRowIds.length} Records`}
         confirmVariant="danger"
+      />
+
+      {/* Send Email Modal */}
+      <SendEmailModal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        reportTitle="My Payment"
+        reportType="Payment Cycle Ledger"
+        sheetName="My Payments"
+        filename={`${(currentCompany?.name || 'Company').replace(/\s+/g, '_')}_Payment_Details_${selectedMonthFilter}_${selectedFinancialYear || 'FY'}.xlsx`}
+        metadata={[
+          { label: 'Company', value: currentCompany?.name || 'All Companies' },
+          { label: 'Period', value: `${selectedMonthFilter} (${selectedFinancialYear || 'FY'})` },
+        ]}
+        summaryCards={[
+          { label: 'Total Cycles', value: displayedRows.length },
+          { label: 'Net Payable', value: formatCurrency(totals.finalPayout), highlight: true, color: 'emerald' },
+        ]}
+        headers={['Company', 'Cycle', 'Amount', 'Loss', 'Final Payable']}
+        rows={displayedRows.map((r) => [
+          r.companyName || '',
+          r.cycle || '',
+          r.amount || 0,
+          r.loss || 0,
+          (Number(r.amount) || 0) - (Number(r.loss) || 0),
+        ])}
       />
     </div>
   );

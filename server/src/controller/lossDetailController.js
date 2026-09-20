@@ -42,6 +42,8 @@ const createLossDetail = async (req, res, next) => {
       reason = 'Parcel damage/loss',
       riderName = '',
       status = 'Not Recovered',
+      remark,
+      ayushRemark,
     } = req.body;
 
     if (!companyId || !month) {
@@ -60,6 +62,7 @@ const createLossDetail = async (req, res, next) => {
       reason: reason || 'Parcel damage/loss',
       riderName: riderName ? riderName.trim() : '',
       status: validStat,
+      remark: (remark ?? ayushRemark ?? '').toString().trim(),
     });
 
     const saved = await lossItem.save();
@@ -99,6 +102,7 @@ const bulkImportLossDetails = async (req, res, next) => {
         reason: r.reason || 'Parcel damage/loss',
         riderName: r.riderName || '',
         status: validStat,
+        remark: (r.remark ?? r.ayushRemark ?? '').toString().trim(),
       };
     });
 
@@ -136,6 +140,8 @@ const updateLossDetail = async (req, res, next) => {
     }
     if (req.body.month !== undefined) lossItem.month = req.body.month;
     if (req.body.companyId !== undefined) lossItem.companyId = req.body.companyId;
+    if (req.body.remark !== undefined) lossItem.remark = (req.body.remark || '').trim();
+    if (req.body.ayushRemark !== undefined) lossItem.remark = (req.body.ayushRemark || '').trim();
 
     const updated = await lossItem.save();
     await updated.populate('companyId', 'name code');

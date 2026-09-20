@@ -114,40 +114,47 @@ export const Header = () => {
           {getPageTitle()}
         </span>
 
-        <span className="text-gray-300 hidden sm:inline">|</span>
+        {/* Separator shown only when filters are visible */}
+        {location.pathname !== '/advanced' && <span className="text-gray-300 hidden sm:inline">|</span>}
 
-        {/* Global Company Filter Dropdown (Active Companies Only) */}
-        <CustomDropdown
-          value={selectedCompanyFilter}
-          onChange={setSelectedCompanyFilter}
-          options={companyOptions}
-          icon={Building2}
-          size="sm"
-          searchable={true}
-          minWidth="150px"
-        />
+        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Hub Expenses & Advanced */}
+        {location.pathname !== '/hub-expenses' && location.pathname !== '/expenses' && location.pathname !== '/advanced' && (
+          <CustomDropdown
+            value={selectedCompanyFilter}
+            onChange={setSelectedCompanyFilter}
+            options={companyOptions}
+            icon={Building2}
+            size="sm"
+            searchable={true}
+            minWidth="150px"
+          />
+        )}
 
-        {/* Global Financial Year Dropdown */}
-        <CustomDropdown
-          value={selectedFinancialYear}
-          onChange={setSelectedFinancialYear}
-          options={financialYearOptions}
-          icon={Calendar}
-          size="sm"
-          searchable={false}
-          minWidth="130px"
-        />
+        {/* Global Financial Year Dropdown - Hidden on Advanced */}
+        {location.pathname !== '/advanced' && (
+          <CustomDropdown
+            value={selectedFinancialYear}
+            onChange={setSelectedFinancialYear}
+            options={financialYearOptions}
+            icon={Calendar}
+            size="sm"
+            searchable={false}
+            minWidth="130px"
+          />
+        )}
 
-        {/* Global Month Filter Dropdown */}
-        <CustomDropdown
-          value={selectedMonthFilter}
-          onChange={setSelectedMonthFilter}
-          options={monthOptions}
-          icon={Calendar}
-          size="sm"
-          searchable={true}
-          minWidth="135px"
-        />
+        {/* Global Month Filter Dropdown - Hidden on Advanced */}
+        {location.pathname !== '/advanced' && (
+          <CustomDropdown
+            value={selectedMonthFilter}
+            onChange={setSelectedMonthFilter}
+            options={monthOptions}
+            icon={Calendar}
+            size="sm"
+            searchable={true}
+            minWidth="135px"
+          />
+        )}
 
         {/* GLOBAL LOCK/EDIT TOGGLE */}
         <button

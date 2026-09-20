@@ -248,7 +248,15 @@ export const SettingsHub = () => {
     setCurrentRiders((prev) =>
       prev.map((r, idx) => {
         if (idx !== index) return r;
-        const updated = { ...r, [field]: value };
+        let finalValue = value;
+        if (['rate', 'primary', 'clubbed'].includes(field)) {
+          let str = String(value ?? '').trim();
+          if (/^0+[0-9]+/.test(str)) {
+            str = str.replace(/^0+/, '');
+          }
+          finalValue = str;
+        }
+        const updated = { ...r, [field]: finalValue };
 
         // Sync riderCombined if riderId or riderName changes
         if (field === 'riderId' || field === 'riderName') {
@@ -860,7 +868,8 @@ export const SettingsHub = () => {
                         <input
                           type="number"
                           placeholder="0"
-                          value={r.rate}
+                          value={r.rate === 0 || r.rate === '0' ? '' : (r.rate ?? '')}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleRiderChange(idx, 'rate', e.target.value)}
                           className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
                         />
@@ -870,7 +879,8 @@ export const SettingsHub = () => {
                         <input
                           type="number"
                           placeholder="0"
-                          value={r.primary}
+                          value={r.primary === 0 || r.primary === '0' ? '' : (r.primary ?? '')}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleRiderChange(idx, 'primary', e.target.value)}
                           className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
                         />
@@ -880,7 +890,8 @@ export const SettingsHub = () => {
                         <input
                           type="number"
                           placeholder="0"
-                          value={r.clubbed}
+                          value={r.clubbed === 0 || r.clubbed === '0' ? '' : (r.clubbed ?? '')}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleRiderChange(idx, 'clubbed', e.target.value)}
                           className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
                         />
@@ -906,7 +917,8 @@ export const SettingsHub = () => {
                         <input
                           type="number"
                           placeholder="0"
-                          value={r.rate}
+                          value={r.rate === 0 || r.rate === '0' ? '' : (r.rate ?? '')}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleRiderChange(idx, 'rate', e.target.value)}
                           className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
                         />

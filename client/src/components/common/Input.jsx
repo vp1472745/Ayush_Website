@@ -17,6 +17,26 @@ export const Input = ({
   inputClassName = '',
   ...props
 }) => {
+  const handleChange = (e) => {
+    if (!onChange) return;
+    if (type === 'number') {
+      let raw = e.target.value;
+      if (raw && /^0+[0-9]+/.test(raw)) {
+        e.target.value = raw.replace(/^0+/, '');
+      }
+    }
+    onChange(e);
+  };
+
+  const handleFocus = (e) => {
+    if (type === 'number') {
+      e.target.select();
+    }
+    if (props.onFocus) {
+      props.onFocus(e);
+    }
+  };
+
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       {label && (
@@ -36,9 +56,10 @@ export const Input = ({
           id={name}
           name={name}
           type={type}
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
+          value={type === 'number' && (value === 0 || value === '0') ? '' : (value ?? '')}
+          onChange={handleChange}
+          onFocus={handleFocus}
+          placeholder={placeholder || (type === 'number' ? '0' : '')}
           disabled={disabled}
           required={required}
           className={`

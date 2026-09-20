@@ -9,6 +9,7 @@ const hubExpenseRoutes = require('./hubExpenseRoutes');
 const paymentLedgerRoutes = require('./paymentLedgerRoutes');
 const advanceRoutes = require('./advanceRoutes');
 const myPaymentRoutes = require('./myPaymentRoutes');
+const emailRoutes = require('./emailRoutes');
 
 // API Health Check
 router.get('/health', (req, res) => {
@@ -28,5 +29,6 @@ router.use('/hub-expenses', hubExpenseRoutes);
 router.use('/payments', paymentLedgerRoutes);
 router.use('/advances', advanceRoutes);
 router.use('/my-payments', myPaymentRoutes);
+router.use('/email', emailRoutes);
 
 module.exports = router;

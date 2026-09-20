@@ -1,7 +1,6 @@
 const RiderPayout = require('../modals/RiderPayout');
 const PaymentLedger = require('../modals/PaymentLedger');
 const Company = require('../modals/Company');
-const Advance = require('../modals/Advance');
 const nodemailer = require('nodemailer');
 const XLSX = require('xlsx');
 
@@ -160,63 +159,6 @@ function findMatchingRiderInCompany(companyRiders, inputId, inputName) {
   return null;
 }
 
-async function findMatchingAdvanceForRider(companyId, month, inputId, inputName) {
-  if (!companyId) return null;
-  const rawId = (inputId || '').toString().trim().replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '');
-  const rawName = (inputName || '').toString().trim().replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '');
-  if (!rawId && !rawName) return null;
-
-  const orClauses = [];
-  if (rawId) {
-    orClauses.push({ riderId: rawId });
-    orClauses.push({ riderId: { $regex: new RegExp(rawId, 'i') } });
-  }
-  if (rawName && rawName.length >= 2) {
-    orClauses.push({ riderName: { $regex: new RegExp(`^${rawName}$`, 'i') } });
-    orClauses.push({ riderName: { $regex: new RegExp(rawName, 'i') } });
-  }
-
-  if (orClauses.length === 0) return null;
-
-  // 1. Try matching within target month first
-  if (month && month !== 'all') {
-    const monthQuery = { companyId, month, $or: orClauses };
-    const monthAdvances = await Advance.find(monthQuery).sort({ createdAt: -1 });
-    if (monthAdvances && monthAdvances.length > 0) {
-      const totalCut = monthAdvances.reduce((s, a) => s + (Number(a.advanceCut) || 0), 0);
-      const totalAdvance = monthAdvances.reduce((s, a) => s + (Number(a.advance) || 0), 0);
-      const totalRemaining = monthAdvances.reduce((s, a) => s + (Number(a.remainingAmount) !== undefined ? Number(a.remainingAmount) : ((Number(a.advance) || 0) - (Number(a.advanceCut) || 0))), 0);
-      const firstRemark = monthAdvances.map((a) => a.remark).filter(Boolean).join(' | ');
-
-      return {
-        advanceCut: totalCut,
-        advance: totalAdvance,
-        remainingAmount: totalRemaining,
-        remark: firstRemark || `Adv Cut: ₹${totalCut} (Bal: ₹${totalRemaining})`,
-        count: monthAdvances.length,
-      };
-    }
-  }
-
-  // 2. Fallback: Search across all advances (e.g. prior month remaining balances)
-  const allQuery = { companyId, $or: orClauses };
-  const allAdvances = await Advance.find(allQuery).sort({ createdAt: -1 });
-  if (!allAdvances || allAdvances.length === 0) return null;
-
-  const totalCut = allAdvances.reduce((s, a) => s + (Number(a.advanceCut) || 0), 0);
-  const totalAdvance = allAdvances.reduce((s, a) => s + (Number(a.advance) || 0), 0);
-  const totalRemaining = allAdvances.reduce((s, a) => s + (Number(a.remainingAmount) !== undefined ? Number(a.remainingAmount) : ((Number(a.advance) || 0) - (Number(a.advanceCut) || 0))), 0);
-  const firstRemark = allAdvances.map((a) => a.remark).filter(Boolean).join(' | ');
-
-  return {
-    advanceCut: totalCut,
-    advance: totalAdvance,
-    remainingAmount: totalRemaining,
-    remark: firstRemark || `Adv Cut: ₹${totalCut} (Bal: ₹${totalRemaining})`,
-    count: allAdvances.length,
-  };
-}
-
 // @desc    Create new rider payout row
 // @route   POST /api/rider-payouts
 // @access  Private
@@ -283,20 +225,8 @@ const createRiderPayout = async (req, res, next) => {
     const rawStat = (paymentStatus || '').trim().toUpperCase();
     const validStat = ['PAID', 'HOLD', 'PENDING'].includes(rawStat) && rawStat ? rawStat : 'PENDING';
 
-    let finalAdvance = Number(advance) || 0;
-    let finalRemark = (ayushRemark || '').toString().trim() || 'Enter remark';
-
-    if (finalAdvance === 0 && (finalRiderId || finalRiderName)) {
-      const advMatch = await findMatchingAdvanceForRider(companyId, month, finalRiderId, finalRiderName);
-      if (advMatch) {
-        finalAdvance = Number(advMatch.advanceCut) > 0
-          ? Number(advMatch.advanceCut)
-          : (Number(advMatch.remainingAmount) > 0 ? Number(advMatch.remainingAmount) : Number(advMatch.advance) || 0);
-        if (finalRemark === 'Enter remark') {
-          finalRemark = advMatch.remark || `Adv Cut: ₹${finalAdvance} (Bal: ₹${advMatch.remainingAmount})`;
-        }
-      }
-    }
+    const finalAdvance = Number(advance) || 0;
+    const finalRemark = (ayushRemark || '').toString().trim() || 'Enter remark';
 
     const payout = new RiderPayout({
       companyId,
@@ -366,7 +296,6 @@ const bulkImportRiderPayouts = async (req, res, next) => {
     const shouldTrackRiders = company ? company.trackRiderDetails !== false : true;
 
     const companyRiders = company && Array.isArray(company.riders) ? company.riders : [];
-    const companyAdvances = await Advance.find({ companyId }).sort({ createdAt: -1 });
 
     const docsToInsert = rows.map((r, index) => {
       const rawStat = (r.paymentStatus || '').toString().trim().toUpperCase();
@@ -390,7 +319,7 @@ const bulkImportRiderPayouts = async (req, res, next) => {
           if (!inputId && matched.riderId) inputId = matched.riderId;
           if (!inputName && matched.riderName) inputName = matched.riderName;
           if (!inputRate) {
-            inputRate = Number(matched.rate !== undefined && matched.rate !== null && Number(matched.rate) > 0 ? matched.rate : (matched.rateCard || 0));
+            inputRate = Number(matched.rate !== undefined && matched.rate !== null && Number(matched.rate) > 0 ? match.rate : (matched.rateCard || 0));
           }
         }
       }
@@ -412,32 +341,8 @@ const bulkImportRiderPayouts = async (req, res, next) => {
       const pickup = Number(r.pickup) || 0;
       const rateCard = inputRate;
       const loss = Number(r.loss) || 0;
-      let advance = Number(r.advance) || 0;
-      let ayushRemark = (r.ayushRemark || '').toString().trim() || 'Enter remark';
-
-      // Smart Advance auto-fetch if advance is 0
-      if (advance === 0 && (inputId || inputName)) {
-        const rawId = (inputId || '').toString().trim().replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '');
-        const rawName = (inputName || '').toString().trim().replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').toLowerCase();
-
-        const matchedAdvances = companyAdvances.filter((a) => {
-          const aId = (a.riderId || '').toString().trim().replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '');
-          const aName = (a.riderName || '').toString().trim().replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').toLowerCase();
-          return (rawId && aId === rawId) || (rawName && (aName === rawName || aName.includes(rawName) || rawName.includes(aName)));
-        });
-
-        if (matchedAdvances.length > 0) {
-          const totalCut = matchedAdvances.reduce((s, a) => s + (Number(a.advanceCut) || 0), 0);
-          const totalRemaining = matchedAdvances.reduce((s, a) => s + (Number(a.remainingAmount) !== undefined ? Number(a.remainingAmount) : ((Number(a.advance) || 0) - (Number(a.advanceCut) || 0))), 0);
-          const totalAdv = matchedAdvances.reduce((s, a) => s + (Number(a.advance) || 0), 0);
-
-          advance = totalCut > 0 ? totalCut : (totalRemaining > 0 ? totalRemaining : totalAdv);
-          if (ayushRemark === 'Enter remark') {
-            const firstRemark = matchedAdvances.map((a) => a.remark).filter(Boolean).join(' | ');
-            ayushRemark = firstRemark || `Adv Cut: ₹${advance} (Bal: ₹${totalRemaining})`;
-          }
-        }
-      }
+      const advance = Number(r.advance) || 0;
+      const ayushRemark = (r.ayushRemark || '').toString().trim() || 'Enter remark';
 
       let deliveredPickupTotal = 0;
       let payout = 0;
