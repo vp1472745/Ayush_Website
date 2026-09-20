@@ -1,13 +1,14 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getCompanies,
   createCompany,
   updateCompany,
   toggleCompanyStatus,
   deleteCompany,
-} = require('../controller/companyController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/companyController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect); // All company routes protected
 
@@ -21,4 +22,4 @@ router.route('/:id')
 
 router.patch('/:id/toggle-status', toggleCompanyStatus);
 
-module.exports = router;
+export default router;

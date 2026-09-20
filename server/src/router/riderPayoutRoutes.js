@@ -1,6 +1,5 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getRiderPayouts,
   createRiderPayout,
   bulkImportRiderPayouts,
@@ -8,8 +7,10 @@ const {
   deleteRiderPayout,
   bulkDeleteRiderPayouts,
   sendPayoutEmail,
-} = require('../controller/riderPayoutController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/riderPayoutController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect);
 
@@ -25,4 +26,4 @@ router.route('/:id')
   .patch(updateRiderPayout)
   .delete(deleteRiderPayout);
 
-module.exports = router;
+export default router;

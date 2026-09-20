@@ -1,6 +1,5 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getAdvances,
   getOutstandingAdvances,
   carryForwardAdvances,
@@ -9,8 +8,10 @@ const {
   updateAdvance,
   deleteAdvance,
   bulkDeleteAdvances,
-} = require('../controller/advanceController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/advanceController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect);
 
@@ -27,4 +28,4 @@ router.route('/:id')
   .patch(updateAdvance)
   .delete(deleteAdvance);
 
-module.exports = router;
+export default router;

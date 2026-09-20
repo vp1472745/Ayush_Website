@@ -1,14 +1,15 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getLossDetails,
   createLossDetail,
   bulkImportLossDetails,
   updateLossDetail,
   deleteLossDetail,
   bulkDeleteLossDetails,
-} = require('../controller/lossDetailController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/lossDetailController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect);
 
@@ -23,4 +24,4 @@ router.route('/:id')
   .patch(updateLossDetail)
   .delete(deleteLossDetail);
 
-module.exports = router;
+export default router;

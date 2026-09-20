@@ -1,11 +1,12 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getPayments,
   updatePaymentStatus,
   createPayment,
-} = require('../controller/paymentLedgerController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/paymentLedgerController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect);
 
@@ -15,4 +16,4 @@ router.route('/')
 
 router.patch('/:id/status', updatePaymentStatus);
 
-module.exports = router;
+export default router;

@@ -1,13 +1,19 @@
-const RiderPayout = require('../modals/RiderPayout');
-const PaymentLedger = require('../modals/PaymentLedger');
-const Company = require('../modals/Company');
-const nodemailer = require('nodemailer');
-const XLSX = require('xlsx');
+import RiderPayout from '../modals/RiderPayout.js';
+import PaymentLedger from '../modals/PaymentLedger.js';
+import Company from '../modals/Company.js';
+import nodemailer from 'nodemailer';
+import XLSX from 'xlsx';
+import path from 'path';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // @desc    Get rider payouts by company & month
 // @route   GET /api/rider-payouts
 // @access  Private
-const getRiderPayouts = async (req, res, next) => {
+export const getRiderPayouts = async (req, res, next) => {
   try {
     const { companyId, month } = req.query;
     const filter = {};
@@ -162,7 +168,7 @@ function findMatchingRiderInCompany(companyRiders, inputId, inputName) {
 // @desc    Create new rider payout row
 // @route   POST /api/rider-payouts
 // @access  Private
-const createRiderPayout = async (req, res, next) => {
+export const createRiderPayout = async (req, res, next) => {
   try {
     const {
       companyId,
@@ -283,7 +289,7 @@ const createRiderPayout = async (req, res, next) => {
 // @desc    Bulk Import CSV/Excel rider payouts (defaults to PENDING if empty/missing)
 // @route   POST /api/rider-payouts/bulk-import
 // @access  Private
-const bulkImportRiderPayouts = async (req, res, next) => {
+export const bulkImportRiderPayouts = async (req, res, next) => {
   try {
     const { companyId, month, rows } = req.body;
 
@@ -396,7 +402,7 @@ const bulkImportRiderPayouts = async (req, res, next) => {
 // @desc    Update single rider payout field or entire row
 // @route   PATCH /api/rider-payouts/:id
 // @access  Private
-const updateRiderPayout = async (req, res, next) => {
+export const updateRiderPayout = async (req, res, next) => {
   try {
     const payout = await RiderPayout.findById(req.params.id);
     if (!payout) {
@@ -476,7 +482,7 @@ const updateRiderPayout = async (req, res, next) => {
 // @desc    Delete rider payout record
 // @route   DELETE /api/rider-payouts/:id
 // @access  Private
-const deleteRiderPayout = async (req, res, next) => {
+export const deleteRiderPayout = async (req, res, next) => {
   try {
     const payout = await RiderPayout.findById(req.params.id);
     if (!payout) {
@@ -499,7 +505,7 @@ const deleteRiderPayout = async (req, res, next) => {
 // @desc    Bulk Delete rider payouts
 // @route   POST /api/rider-payouts/bulk-delete
 // @access  Private
-const bulkDeleteRiderPayouts = async (req, res, next) => {
+export const bulkDeleteRiderPayouts = async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -520,13 +526,10 @@ const bulkDeleteRiderPayouts = async (req, res, next) => {
   }
 };
 
-const path = require('path');
-
 // Helper to create email transporter
 const createTransporter = async () => {
   // Dynamically reload .env.local and .env so credential changes take effect immediately without needing server restart
   try {
-    const dotenv = require('dotenv');
     dotenv.config({ path: path.join(__dirname, '../../.env.local'), override: true });
     dotenv.config({ path: path.join(__dirname, '../../.env'), override: true });
   } catch (err) {
@@ -576,7 +579,7 @@ const createTransporter = async () => {
 // @desc    Send Payout Export via Email with Excel attachment
 // @route   POST /api/rider-payouts/send-email
 // @access  Private
-const sendPayoutEmail = async (req, res, next) => {
+export const sendPayoutEmail = async (req, res, next) => {
   try {
     const {
       toEmail = 'vineetpancheshwar1611@gmail.com',
@@ -814,12 +817,4 @@ const sendPayoutEmail = async (req, res, next) => {
   }
 };
 
-module.exports = {
-  getRiderPayouts,
-  createRiderPayout,
-  bulkImportRiderPayouts,
-  updateRiderPayout,
-  deleteRiderPayout,
-  bulkDeleteRiderPayouts,
-  sendPayoutEmail,
-};
+

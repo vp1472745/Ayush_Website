@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const lossDetailSchema = new mongoose.Schema(
   {
@@ -49,4 +49,4 @@ const lossDetailSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model('LossDetail', lossDetailSchema);
+export default mongoose.model('LossDetail', lossDetailSchema);

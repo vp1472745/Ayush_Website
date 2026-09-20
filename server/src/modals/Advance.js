@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const advanceSchema = new mongoose.Schema(
   {
@@ -64,4 +64,4 @@ advanceSchema.pre('save', function (next) {
   next();
 });
 
-module.exports = mongoose.model('Advance', advanceSchema);
+export default mongoose.model('Advance', advanceSchema);

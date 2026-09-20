@@ -1,7 +1,7 @@
-const jwt = require('jsonwebtoken');
-const User = require('../modals/User');
+import jwt from 'jsonwebtoken';
+import User from '../modals/User.js';
 
-const protect = async (req, res, next) => {
+export const protect = async (req, res, next) => {
   let token;
 
   if (
@@ -38,5 +38,3 @@ const protect = async (req, res, next) => {
     });
   }
 };
-
-module.exports = { protect };

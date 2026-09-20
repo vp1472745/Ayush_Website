@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const hubExpenseSchema = new mongoose.Schema(
   {
@@ -38,4 +38,4 @@ const hubExpenseSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model('HubExpense', hubExpenseSchema);
+export default mongoose.model('HubExpense', hubExpenseSchema);

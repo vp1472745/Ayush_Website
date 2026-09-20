@@ -1,5 +1,5 @@
-const User = require('../modals/User');
-const jwt = require('jsonwebtoken');
+import jwt from 'jsonwebtoken';
+import User from '../modals/User.js';
 
 // Generate JWT token with 1-hour lifespan
 const generateToken = (id) => {
@@ -15,7 +15,7 @@ const generateToken = (id) => {
 // @desc    Admin login
 // @route   POST /api/auth/login
 // @access  Public
-const loginAdmin = async (req, res, next) => {
+export const loginAdmin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -58,7 +58,7 @@ const loginAdmin = async (req, res, next) => {
 // @desc    Get current logged in user profile
 // @route   GET /api/auth/profile
 // @access  Private
-const getProfile = async (req, res, next) => {
+export const getProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) {
@@ -84,7 +84,7 @@ const getProfile = async (req, res, next) => {
 // @desc    Update admin profile
 // @route   PUT /api/auth/profile
 // @access  Private
-const updateProfile = async (req, res, next) => {
+export const updateProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) {
@@ -121,7 +121,7 @@ const updateProfile = async (req, res, next) => {
 // @desc    Upload profile photo (saved in server/uploads/)
 // @route   POST /api/auth/upload-avatar
 // @access  Private
-const uploadAvatar = async (req, res, next) => {
+export const uploadAvatar = async (req, res, next) => {
   try {
     if (!req.file) {
       res.status(400);
@@ -149,11 +149,4 @@ const uploadAvatar = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  loginAdmin,
-  getProfile,
-  updateProfile,
-  uploadAvatar,
 };

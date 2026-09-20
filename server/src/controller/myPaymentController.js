@@ -1,10 +1,10 @@
-const MyPayment = require('../modals/MyPayment');
-const Company = require('../modals/Company');
+import MyPayment from '../modals/MyPayment.js';
+import Company from '../modals/Company.js';
 
 // @desc    Get all payment payout records filtered by company, month, financialYear
 // @route   GET /api/my-payments
 // @access  Private
-const getMyPayments = async (req, res, next) => {
+export const getMyPayments = async (req, res, next) => {
   try {
     const { companyId, month, financialYear } = req.query;
     const filter = {};
@@ -36,7 +36,7 @@ const getMyPayments = async (req, res, next) => {
 // @desc    Create single payment payout record
 // @route   POST /api/my-payments
 // @access  Private
-const createMyPayment = async (req, res, next) => {
+export const createMyPayment = async (req, res, next) => {
   try {
     const {
       companyId,
@@ -98,7 +98,7 @@ const createMyPayment = async (req, res, next) => {
 // @desc    Bulk Import CSV/Excel Payment Records
 // @route   POST /api/my-payments/bulk-import
 // @access  Private
-const bulkImportMyPayments = async (req, res, next) => {
+export const bulkImportMyPayments = async (req, res, next) => {
   try {
     const { companyId, month, financialYear = '', rows } = req.body;
 
@@ -164,7 +164,7 @@ const bulkImportMyPayments = async (req, res, next) => {
 // @desc    Update single payment payout record
 // @route   PATCH /api/my-payments/:id
 // @access  Private
-const updateMyPayment = async (req, res, next) => {
+export const updateMyPayment = async (req, res, next) => {
   try {
     const paymentDoc = await MyPayment.findById(req.params.id);
     if (!paymentDoc) {
@@ -218,7 +218,7 @@ const updateMyPayment = async (req, res, next) => {
 // @desc    Delete single payment payout record
 // @route   DELETE /api/my-payments/:id
 // @access  Private
-const deleteMyPayment = async (req, res, next) => {
+export const deleteMyPayment = async (req, res, next) => {
   try {
     const deleted = await MyPayment.findByIdAndDelete(req.params.id);
     if (!deleted) {
@@ -239,7 +239,7 @@ const deleteMyPayment = async (req, res, next) => {
 // @desc    Bulk delete payment records by IDs
 // @route   POST /api/my-payments/bulk-delete
 // @access  Private
-const bulkDeleteMyPayments = async (req, res, next) => {
+export const bulkDeleteMyPayments = async (req, res, next) => {
   try {
     const { ids } = req.body;
 
@@ -258,13 +258,4 @@ const bulkDeleteMyPayments = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  getMyPayments,
-  createMyPayment,
-  bulkImportMyPayments,
-  updateMyPayment,
-  deleteMyPayment,
-  bulkDeleteMyPayments,
 };

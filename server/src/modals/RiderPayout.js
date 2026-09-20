@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const riderPayoutSchema = new mongoose.Schema(
   {
@@ -104,4 +104,4 @@ riderPayoutSchema.pre('save', function (next) {
   next();
 });
 
-module.exports = mongoose.model('RiderPayout', riderPayoutSchema);
+export default mongoose.model('RiderPayout', riderPayoutSchema);

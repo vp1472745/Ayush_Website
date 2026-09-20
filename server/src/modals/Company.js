@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const companySchema = new mongoose.Schema(
   {
@@ -61,14 +61,20 @@ const companySchema = new mongoose.Schema(
           type: Number,
           default: 0,
         },
-        primary: {
-          type: Number,
-          default: 0,
+        category: {
+          type: String,
+          default: '',
         },
-        clubbed: {
-          type: Number,
-          default: 0,
+        contact: {
+          type: String,
+          default: '',
         },
+      },
+    ],
+    cycles: [
+      {
+        type: String,
+        trim: true,
       },
     ],
   },
@@ -77,4 +83,4 @@ const companySchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model('Company', companySchema);
+export default mongoose.model('Company', companySchema);

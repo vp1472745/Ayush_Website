@@ -1,14 +1,20 @@
-const path = require('path');
-// Load environment variables from .env.local
-require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const connectDB = require('./config/db');
-const seedInitialData = require('./config/seed');
-const apiRoutes = require('./router/index');
-const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from .env.local
+dotenv.config({ path: path.join(__dirname, '../.env.local') });
+
+import express from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import connectDB from './config/db.js';
+import seedInitialData from './config/seed.js';
+import apiRoutes from './router/index.js';
+import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
 
@@ -57,4 +63,4 @@ const server = app.listen(PORT, () => {
   console.log(`======================================================\n`);
 });
 
-module.exports = { app, server };
+export { app, server };

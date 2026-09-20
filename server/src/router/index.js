@@ -1,15 +1,15 @@
-const express = require('express');
-const router = express.Router();
+import express from 'express';
+import authRoutes from './authRoutes.js';
+import companyRoutes from './companyRoutes.js';
+import riderPayoutRoutes from './riderPayoutRoutes.js';
+import lossDetailRoutes from './lossDetailRoutes.js';
+import hubExpenseRoutes from './hubExpenseRoutes.js';
+import paymentLedgerRoutes from './paymentLedgerRoutes.js';
+import advanceRoutes from './advanceRoutes.js';
+import myPaymentRoutes from './myPaymentRoutes.js';
+import emailRoutes from './emailRoutes.js';
 
-const authRoutes = require('./authRoutes');
-const companyRoutes = require('./companyRoutes');
-const riderPayoutRoutes = require('./riderPayoutRoutes');
-const lossDetailRoutes = require('./lossDetailRoutes');
-const hubExpenseRoutes = require('./hubExpenseRoutes');
-const paymentLedgerRoutes = require('./paymentLedgerRoutes');
-const advanceRoutes = require('./advanceRoutes');
-const myPaymentRoutes = require('./myPaymentRoutes');
-const emailRoutes = require('./emailRoutes');
+const router = express.Router();
 
 // API Health Check
 router.get('/health', (req, res) => {
@@ -31,4 +31,4 @@ router.use('/advances', advanceRoutes);
 router.use('/my-payments', myPaymentRoutes);
 router.use('/email', emailRoutes);
 
-module.exports = router;
+export default router;

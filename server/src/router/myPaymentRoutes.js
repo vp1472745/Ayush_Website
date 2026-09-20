@@ -1,14 +1,15 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getMyPayments,
   createMyPayment,
   bulkImportMyPayments,
   updateMyPayment,
   deleteMyPayment,
   bulkDeleteMyPayments,
-} = require('../controller/myPaymentController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/myPaymentController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect);
 
@@ -23,4 +24,4 @@ router.route('/:id')
   .patch(updateMyPayment)
   .delete(deleteMyPayment);
 
-module.exports = router;
+export default router;

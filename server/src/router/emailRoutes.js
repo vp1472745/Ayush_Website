@@ -1,8 +1,9 @@
-const express = require('express');
+import express from 'express';
+import { sendReportEmail } from '../controller/emailController.js';
+
 const router = express.Router();
-const { sendReportEmail } = require('../controller/emailController');
 
 // POST /api/email/send-report
 router.post('/send-report', sendReportEmail);
 
-module.exports = router;
+export default router;

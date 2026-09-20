@@ -1,9 +1,9 @@
-const LossDetail = require('../modals/LossDetail');
+import LossDetail from '../modals/LossDetail.js';
 
 // @desc    Get all loss details filtered by company & month
 // @route   GET /api/loss-details
 // @access  Private
-const getLossDetails = async (req, res, next) => {
+export const getLossDetails = async (req, res, next) => {
   try {
     const { companyId, month } = req.query;
     const filter = {};
@@ -32,7 +32,7 @@ const getLossDetails = async (req, res, next) => {
 // @desc    Create single loss detail record
 // @route   POST /api/loss-details
 // @access  Private
-const createLossDetail = async (req, res, next) => {
+export const createLossDetail = async (req, res, next) => {
   try {
     const {
       companyId,
@@ -81,7 +81,7 @@ const createLossDetail = async (req, res, next) => {
 // @desc    Bulk Import CSV/Excel Loss Details (defaults to Not Recovered if empty/missing)
 // @route   POST /api/loss-details/bulk-import
 // @access  Private
-const bulkImportLossDetails = async (req, res, next) => {
+export const bulkImportLossDetails = async (req, res, next) => {
   try {
     const { companyId, month, rows } = req.body;
 
@@ -122,7 +122,7 @@ const bulkImportLossDetails = async (req, res, next) => {
 // @desc    Update single loss detail field or entire record
 // @route   PATCH /api/loss-details/:id
 // @access  Private
-const updateLossDetail = async (req, res, next) => {
+export const updateLossDetail = async (req, res, next) => {
   try {
     const lossItem = await LossDetail.findById(req.params.id);
     if (!lossItem) {
@@ -159,7 +159,7 @@ const updateLossDetail = async (req, res, next) => {
 // @desc    Delete loss detail record
 // @route   DELETE /api/loss-details/:id
 // @access  Private
-const deleteLossDetail = async (req, res, next) => {
+export const deleteLossDetail = async (req, res, next) => {
   try {
     const lossItem = await LossDetail.findById(req.params.id);
     if (!lossItem) {
@@ -181,7 +181,7 @@ const deleteLossDetail = async (req, res, next) => {
 // @desc    Bulk Delete loss detail records
 // @route   POST /api/loss-details/bulk-delete
 // @access  Private
-const bulkDeleteLossDetails = async (req, res, next) => {
+export const bulkDeleteLossDetails = async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -199,13 +199,4 @@ const bulkDeleteLossDetails = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  getLossDetails,
-  createLossDetail,
-  bulkImportLossDetails,
-  updateLossDetail,
-  deleteLossDetail,
-  bulkDeleteLossDetails,
 };

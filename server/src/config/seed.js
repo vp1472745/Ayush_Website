@@ -1,8 +1,14 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env.local') });
-const mongoose = require('mongoose');
-const User = require('../modals/User');
-const Company = require('../modals/Company');
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
+import User from '../modals/User.js';
+import Company from '../modals/Company.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '../../.env.local') });
 
 const seedInitialData = async () => {
   try {
@@ -74,8 +80,8 @@ const seedInitialData = async () => {
   }
 };
 
-// If run directly via `node src/config/seed.js`
-if (require.main === module) {
+// Check if run directly
+if (process.argv[1] === __filename) {
   seedInitialData().then(() => {
     console.log('[Seeding Complete]: Disconnecting database.');
     mongoose.disconnect();
@@ -83,4 +89,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = seedInitialData;
+export default seedInitialData;

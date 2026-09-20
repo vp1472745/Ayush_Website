@@ -1,11 +1,15 @@
-const XLSX = require('xlsx');
-const nodemailer = require('nodemailer');
-const path = require('path');
+import XLSX from 'xlsx';
+import nodemailer from 'nodemailer';
+import path from 'path';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Helper to create email transporter with dynamic .env reload
-const createTransporter = async () => {
+export const createTransporter = async () => {
   try {
-    const dotenv = require('dotenv');
     dotenv.config({ path: path.join(__dirname, '../../.env.local'), override: true });
     dotenv.config({ path: path.join(__dirname, '../../.env'), override: true });
   } catch (err) {
@@ -57,7 +61,7 @@ const createTransporter = async () => {
 // @desc    Universal Report Email Sender with Excel Attachment
 // @route   POST /api/email/send-report
 // @access  Public / Private
-const sendReportEmail = async (req, res, next) => {
+export const sendReportEmail = async (req, res, next) => {
   try {
     const {
       toEmail = 'vineetpancheshwar1611@gmail.com',
@@ -305,9 +309,4 @@ const sendReportEmail = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  sendReportEmail,
-  createTransporter,
 };

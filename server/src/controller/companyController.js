@@ -1,4 +1,4 @@
-const Company = require('../modals/Company');
+import Company from '../modals/Company.js';
 
 function parseRiderIdentifier(idInput, nameInput, combinedInput) {
   let riderId = (idInput || '').toString().trim();
@@ -82,7 +82,7 @@ const sanitizeRidersList = (riders) => {
 // @desc    Get all companies
 // @route   GET /api/companies
 // @access  Private
-const getCompanies = async (req, res, next) => {
+export const getCompanies = async (req, res, next) => {
   try {
     const companies = await Company.find().sort({ createdAt: -1 });
 
@@ -118,7 +118,7 @@ const getCompanies = async (req, res, next) => {
   }
 };
 
-const createCompany = async (req, res, next) => {
+export const createCompany = async (req, res, next) => {
   try {
     const { name, code, status, icon, color, trackRiderDetails, sheetType, riders } = req.body;
 
@@ -165,7 +165,7 @@ const createCompany = async (req, res, next) => {
 // @desc    Update company
 // @route   PUT /api/companies/:id
 // @access  Private
-const updateCompany = async (req, res, next) => {
+export const updateCompany = async (req, res, next) => {
   try {
     const company = await Company.findById(req.params.id);
     if (!company) {
@@ -201,7 +201,7 @@ const updateCompany = async (req, res, next) => {
 // @desc    Toggle company status (Active <-> Inactive)
 // @route   PATCH /api/companies/:id/toggle-status
 // @access  Private
-const toggleCompanyStatus = async (req, res, next) => {
+export const toggleCompanyStatus = async (req, res, next) => {
   try {
     const company = await Company.findById(req.params.id);
     if (!company) {
@@ -225,7 +225,7 @@ const toggleCompanyStatus = async (req, res, next) => {
 // @desc    Delete company
 // @route   DELETE /api/companies/:id
 // @access  Private
-const deleteCompany = async (req, res, next) => {
+export const deleteCompany = async (req, res, next) => {
   try {
     const company = await Company.findById(req.params.id);
     if (!company) {
@@ -242,12 +242,4 @@ const deleteCompany = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  getCompanies,
-  createCompany,
-  updateCompany,
-  toggleCompanyStatus,
-  deleteCompany,
 };

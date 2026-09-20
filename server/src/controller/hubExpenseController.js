@@ -1,9 +1,9 @@
-const HubExpense = require('../modals/HubExpense');
+import HubExpense from '../modals/HubExpense.js';
 
 // @desc    Get all hub expenses filtered by company & month
 // @route   GET /api/hub-expenses
 // @access  Private
-const getHubExpenses = async (req, res, next) => {
+export const getHubExpenses = async (req, res, next) => {
   try {
     const { companyId, month } = req.query;
     const filter = {};
@@ -32,7 +32,7 @@ const getHubExpenses = async (req, res, next) => {
 // @desc    Create single hub expense
 // @route   POST /api/hub-expenses
 // @access  Private
-const createHubExpense = async (req, res, next) => {
+export const createHubExpense = async (req, res, next) => {
   try {
     const { companyId, month, expenseName, amount = 0, date, remark, ayushRemark } = req.body;
 
@@ -68,7 +68,7 @@ const createHubExpense = async (req, res, next) => {
 // @desc    Bulk Import CSV/Excel Hub Expenses
 // @route   POST /api/hub-expenses/bulk-import
 // @access  Private
-const bulkImportHubExpenses = async (req, res, next) => {
+export const bulkImportHubExpenses = async (req, res, next) => {
   try {
     const { companyId, month, rows } = req.body;
 
@@ -104,7 +104,7 @@ const bulkImportHubExpenses = async (req, res, next) => {
 // @desc    Update hub expense field or record
 // @route   PATCH /api/hub-expenses/:id
 // @access  Private
-const updateHubExpense = async (req, res, next) => {
+export const updateHubExpense = async (req, res, next) => {
   try {
     const expense = await HubExpense.findById(req.params.id);
     if (!expense) {
@@ -138,7 +138,7 @@ const updateHubExpense = async (req, res, next) => {
 // @desc    Delete hub expense
 // @route   DELETE /api/hub-expenses/:id
 // @access  Private
-const deleteHubExpense = async (req, res, next) => {
+export const deleteHubExpense = async (req, res, next) => {
   try {
     const expense = await HubExpense.findById(req.params.id);
     if (!expense) {
@@ -160,7 +160,7 @@ const deleteHubExpense = async (req, res, next) => {
 // @desc    Bulk Delete hub expenses
 // @route   POST /api/hub-expenses/bulk-delete
 // @access  Private
-const bulkDeleteHubExpenses = async (req, res, next) => {
+export const bulkDeleteHubExpenses = async (req, res, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -178,13 +178,4 @@ const bulkDeleteHubExpenses = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  getHubExpenses,
-  createHubExpense,
-  bulkImportHubExpenses,
-  updateHubExpense,
-  deleteHubExpense,
-  bulkDeleteHubExpenses,
 };

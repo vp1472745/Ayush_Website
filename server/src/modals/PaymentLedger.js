@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const paymentLedgerSchema = new mongoose.Schema(
   {
@@ -58,8 +58,7 @@ const paymentLedgerSchema = new mongoose.Schema(
     },
     remark: {
       type: String,
-      default: 'Direct Bank Transfer / Payout Ledger',
-      trim: true,
+      default: '',
     },
   },
   {
@@ -67,4 +66,4 @@ const paymentLedgerSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model('PaymentLedger', paymentLedgerSchema);
+export default mongoose.model('PaymentLedger', paymentLedgerSchema);

@@ -1,10 +1,10 @@
-const PaymentLedger = require('../modals/PaymentLedger');
-const RiderPayout = require('../modals/RiderPayout');
+import PaymentLedger from '../modals/PaymentLedger.js';
+import RiderPayout from '../modals/RiderPayout.js';
 
 // @desc    Get all payment ledger records filtered by company & month
 // @route   GET /api/payments
 // @access  Private
-const getPayments = async (req, res, next) => {
+export const getPayments = async (req, res, next) => {
   try {
     const { companyId, month, status } = req.query;
     const filter = {};
@@ -36,7 +36,7 @@ const getPayments = async (req, res, next) => {
 // @desc    Update single payment status in ledger and sync with RiderPayout
 // @route   PATCH /api/payments/:id/status
 // @access  Private
-const updatePaymentStatus = async (req, res, next) => {
+export const updatePaymentStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
     if (!status) {
@@ -75,7 +75,7 @@ const updatePaymentStatus = async (req, res, next) => {
 // @desc    Create manual payment disbursement voucher
 // @route   POST /api/payments
 // @access  Private
-const createPayment = async (req, res, next) => {
+export const createPayment = async (req, res, next) => {
   try {
     const {
       companyId,
@@ -125,10 +125,4 @@ const createPayment = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  getPayments,
-  updatePaymentStatus,
-  createPayment,
 };

@@ -1,9 +1,9 @@
-const Advance = require('../modals/Advance');
+import Advance from '../modals/Advance.js';
 
 // @desc    Get all advance records filtered by company, month, financialYear
 // @route   GET /api/advances
 // @access  Private
-const getAdvances = async (req, res, next) => {
+export const getAdvances = async (req, res, next) => {
   try {
     const { companyId, month, financialYear } = req.query;
     const filter = {};
@@ -35,7 +35,7 @@ const getAdvances = async (req, res, next) => {
 // @desc    Create single advance record
 // @route   POST /api/advances
 // @access  Private
-const createAdvance = async (req, res, next) => {
+export const createAdvance = async (req, res, next) => {
   try {
     const {
       companyId,
@@ -89,7 +89,7 @@ const createAdvance = async (req, res, next) => {
 // @desc    Bulk Import CSV/Excel Advance Records
 // @route   POST /api/advances/bulk-import
 // @access  Private
-const bulkImportAdvances = async (req, res, next) => {
+export const bulkImportAdvances = async (req, res, next) => {
   try {
     const { companyId, month, financialYear = '', rows } = req.body;
 
@@ -133,7 +133,7 @@ const bulkImportAdvances = async (req, res, next) => {
 // @desc    Update single advance record
 // @route   PATCH /api/advances/:id
 // @access  Private
-const updateAdvance = async (req, res, next) => {
+export const updateAdvance = async (req, res, next) => {
   try {
     const advanceDoc = await Advance.findById(req.params.id);
     if (!advanceDoc) {
@@ -172,7 +172,7 @@ const updateAdvance = async (req, res, next) => {
 // @desc    Delete single advance record
 // @route   DELETE /api/advances/:id
 // @access  Private
-const deleteAdvance = async (req, res, next) => {
+export const deleteAdvance = async (req, res, next) => {
   try {
     const deleted = await Advance.findByIdAndDelete(req.params.id);
     if (!deleted) {
@@ -193,7 +193,7 @@ const deleteAdvance = async (req, res, next) => {
 // @desc    Bulk delete advance records by IDs
 // @route   POST /api/advances/bulk-delete
 // @access  Private
-const bulkDeleteAdvances = async (req, res, next) => {
+export const bulkDeleteAdvances = async (req, res, next) => {
   try {
     const { ids } = req.body;
 
@@ -217,7 +217,7 @@ const bulkDeleteAdvances = async (req, res, next) => {
 // @desc    Get riders with outstanding/remaining advances from previous months
 // @route   GET /api/advances/outstanding
 // @access  Private
-const getOutstandingAdvances = async (req, res, next) => {
+export const getOutstandingAdvances = async (req, res, next) => {
   try {
     const { companyId, month, financialYear } = req.query;
 
@@ -296,7 +296,7 @@ const getOutstandingAdvances = async (req, res, next) => {
 // @desc    Carry forward pending advances to the current month
 // @route   POST /api/advances/carry-forward
 // @access  Private
-const carryForwardAdvances = async (req, res, next) => {
+export const carryForwardAdvances = async (req, res, next) => {
   try {
     const { companyId, month, financialYear = '', records } = req.body;
 
@@ -386,15 +386,4 @@ const carryForwardAdvances = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-
-module.exports = {
-  getAdvances,
-  getOutstandingAdvances,
-  carryForwardAdvances,
-  createAdvance,
-  bulkImportAdvances,
-  updateAdvance,
-  deleteAdvance,
-  bulkDeleteAdvances,
 };

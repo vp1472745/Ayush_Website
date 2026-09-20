@@ -1,14 +1,15 @@
-const express = require('express');
-const router = express.Router();
-const {
+import express from 'express';
+import {
   getHubExpenses,
   createHubExpense,
   bulkImportHubExpenses,
   updateHubExpense,
   deleteHubExpense,
   bulkDeleteHubExpenses,
-} = require('../controller/hubExpenseController');
-const { protect } = require('../middleware/authMiddleware');
+} from '../controller/hubExpenseController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 router.use(protect);
 
@@ -23,4 +24,4 @@ router.route('/:id')
   .patch(updateHubExpense)
   .delete(deleteHubExpense);
 
-module.exports = router;
+export default router;
