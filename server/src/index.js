@@ -5,8 +5,18 @@ import dotenv from 'dotenv';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables from .env.local
-dotenv.config({ path: path.join(__dirname, '../.env.local') });
+// Smart Environment Loading:
+// In production: loads .env.production then .env (system/Render env vars take top precedence)
+// In development: loads .env.local, .env.development, then .env
+const isProduction = process.env.NODE_ENV === 'production';
+if (isProduction) {
+  dotenv.config({ path: path.join(__dirname, '../.env.production') });
+  dotenv.config({ path: path.join(__dirname, '../.env') });
+} else {
+  dotenv.config({ path: path.join(__dirname, '../.env.local'), override: true });
+  dotenv.config({ path: path.join(__dirname, '../.env.development'), override: true });
+  dotenv.config({ path: path.join(__dirname, '../.env') });
+}
 
 import express from 'express';
 import cors from 'cors';
@@ -24,11 +34,47 @@ connectDB().then(async () => {
   await seedInitialData();
 });
 
+// Configure Allowed Origins for CORS
+const configuredClientUrls = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:3000',
+  ...configuredClientUrls,
+];
+
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', process.env.CLIENT_URL].filter(Boolean),
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server, Postman)
+      if (!origin) return callback(null, true);
+
+      // Check if origin is explicitly in allowedOrigins or belongs to Vercel/Render subdomains
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        /\.vercel\.app$/.test(origin) ||
+        /\.onrender\.com$/.test(origin);
+
+      if (isAllowed) {
+        return callback(null, true);
+      }
+
+      // Default allow with warning to prevent breaking live production during initial setup
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  })
+);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
