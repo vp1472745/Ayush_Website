@@ -3,8 +3,14 @@
  * Contains all backend REST API routes and URLs used in the application.
  */
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4500/api';
-export const SERVER_STATIC_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4500';
+// Normalize API_BASE_URL so it always has /api and no trailing slash
+const rawApiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:4500/api').trim().replace(/\/+$/, '');
+export const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
+export const SERVER_STATIC_URL = (
+  import.meta.env.VITE_SERVER_URL ||
+  rawApiUrl.replace(/\/api$/, '') ||
+  'http://localhost:4500'
+).trim().replace(/\/+$/, '');
 
 export const ENDPOINTS = {
   // 1. Authentication & Admin Profile
