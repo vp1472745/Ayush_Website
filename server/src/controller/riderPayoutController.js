@@ -527,8 +527,8 @@ export const bulkDeleteRiderPayouts = async (req, res, next) => {
 };
 
 // Helper to create email transporter
-const createTransporter = async () => {
-  // Dynamically reload .env.local and .env so credential changes take effect immediately without needing server restart
+let cachedTransporter = null;
+export const createTransporter = async () => {
   try {
     dotenv.config({ path: path.join(__dirname, '../../.env.local'), override: true });
     dotenv.config({ path: path.join(__dirname, '../../.env'), override: true });
@@ -540,35 +540,39 @@ const createTransporter = async () => {
   const smtpPass = process.env.SMTP_PASS?.trim();
 
   if (smtpUser && smtpPass) {
-    const isGmail = (process.env.SMTP_HOST || '').toLowerCase().includes('gmail') || smtpUser.toLowerCase().includes('@gmail.com');
-    if (isGmail) {
-      return {
-        transporter: nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: smtpUser,
-            pass: smtpPass.replace(/\s+/g, ''), // remove any inadvertent spaces in app password
-          },
-        }),
-        isReal: true,
-      };
+    const cleanPass = smtpPass.replace(/\s+/g, '');
+    
+    if (
+      cachedTransporter &&
+      cachedTransporter._user === smtpUser &&
+      cachedTransporter._pass === cleanPass
+    ) {
+      return { transporter: cachedTransporter, isReal: true };
     }
 
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      auth: {
+        user: smtpUser,
+        pass: cleanPass,
+      },
+    });
+
+    transporter._user = smtpUser;
+    transporter._pass = cleanPass;
+    cachedTransporter = transporter;
+
     return {
-      transporter: nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: Number(process.env.SMTP_PORT) || 465,
-        secure: Number(process.env.SMTP_PORT) === 465 || !process.env.SMTP_PORT,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-      }),
+      transporter,
       isReal: true,
     };
   }
 
-  // If no SMTP configured, throw error with helpful guide so user knows to add credentials
   const configError = new Error(
     'SMTP credentials not found in server/.env.local. Please add your SMTP_USER (your Gmail) and SMTP_PASS (Google 16-character App Password) in server/.env.local to deliver real emails.'
   );
@@ -787,6 +791,7 @@ export const sendPayoutEmail = async (req, res, next) => {
       from: process.env.EMAIL_FROM || `"Ayush Hub Management" <${process.env.SMTP_USER || 'roommilega1611@gmail.com'}>`,
       to: toEmail,
       subject: emailSubject,
+      text: `Ayush Hub Management - Rider Payout Report for ${companyName} (${month})\n\nPlease find the attached official Excel breakdown.\n${customMessage ? `\nNotes: ${customMessage}\n` : ''}\nRegards,\nAyush Hub Management`,
       html: htmlBody,
       attachments: attachmentBuffer
         ? [
@@ -800,6 +805,7 @@ export const sendPayoutEmail = async (req, res, next) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
+    console.log(`[Payout Email Sent to ${toEmail}]:`, info.messageId, info.response);
 
     let previewUrl = null;
     if (nodemailer.getTestMessageUrl) {
@@ -808,7 +814,7 @@ export const sendPayoutEmail = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: `Email successfully sent to ${toEmail}!`,
+      message: `Rider payout report email successfully sent to ${toEmail}!`,
       messageId: info.messageId,
       previewUrl: previewUrl || undefined,
     });

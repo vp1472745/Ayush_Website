@@ -479,7 +479,7 @@ export const Payments = () => {
           <button
             type="button"
             onClick={() => setIsEmailModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer shrink-0"
             title="Send Exported Excel directly to Email"
           >
             <Mail className="w-3.5 h-3.5 text-rose-600" />

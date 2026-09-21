@@ -7,7 +7,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Helper to create email transporter with dynamic .env reload
+let cachedTransporter = null;
+
+// Helper to create email transporter with pooling for ultra fast delivery
 export const createTransporter = async () => {
   try {
     dotenv.config({ path: path.join(__dirname, '../../.env.local'), override: true });
@@ -20,33 +22,36 @@ export const createTransporter = async () => {
   const smtpPass = process.env.SMTP_PASS?.trim();
 
   if (smtpUser && smtpPass) {
-    const isGmail =
-      (process.env.SMTP_HOST || '').toLowerCase().includes('gmail') ||
-      smtpUser.toLowerCase().includes('@gmail.com');
-
-    if (isGmail) {
-      return {
-        transporter: nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: smtpUser,
-            pass: smtpPass.replace(/\s+/g, ''), // remove accidental spaces in app password
-          },
-        }),
-        isReal: true,
-      };
+    const cleanPass = smtpPass.replace(/\s+/g, '');
+    
+    // Return existing pooled transporter if credentials haven't changed
+    if (
+      cachedTransporter &&
+      cachedTransporter._user === smtpUser &&
+      cachedTransporter._pass === cleanPass
+    ) {
+      return { transporter: cachedTransporter, isReal: true };
     }
 
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      auth: {
+        user: smtpUser,
+        pass: cleanPass,
+      },
+    });
+
+    transporter._user = smtpUser;
+    transporter._pass = cleanPass;
+    cachedTransporter = transporter;
+
     return {
-      transporter: nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: Number(process.env.SMTP_PORT) || 465,
-        secure: Number(process.env.SMTP_PORT) === 465 || !process.env.SMTP_PORT,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-      }),
+      transporter,
       isReal: true,
     };
   }
@@ -280,6 +285,7 @@ export const sendReportEmail = async (req, res, next) => {
         `"Ayush Hub Management" <${process.env.SMTP_USER || 'roommilega1611@gmail.com'}>`,
       to: toEmail,
       subject: emailSubject,
+      text: `Ayush Hub Management - ${reportTitle} Report\n\nPeriod / Context: ${metadata?.map(m => `${m.label}: ${m.value}`).join(' | ') || 'Attached'}\n\nPlease find the attached official Excel report breakdown.\n${customMessage ? `\nNotes: ${customMessage}\n` : ''}\nRegards,\nAyush Hub Management`,
       html: htmlBody,
       attachments: attachmentBuffer
         ? [
@@ -294,6 +300,7 @@ export const sendReportEmail = async (req, res, next) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
+    console.log(`[Email Sent to ${toEmail}]:`, info.messageId, info.response);
 
     let previewUrl = null;
     if (nodemailer.getTestMessageUrl) {
@@ -302,7 +309,7 @@ export const sendReportEmail = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: `Report email successfully sent to ${toEmail}!`,
+      message: `${reportTitle} report email successfully sent to ${toEmail}!`,
       messageId: info.messageId,
       previewUrl: previewUrl || undefined,
     });

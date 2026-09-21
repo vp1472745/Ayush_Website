@@ -11,7 +11,7 @@ export const ToastProvider = ({ children }) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
-  const showToast = useCallback((message, type = 'info', duration = 3000) => {
+  const showToast = useCallback((message, type = 'info', duration = 3500) => {
     // Prevent duplicate rapid triggers (e.g. React StrictMode double invocation)
     const now = Date.now();
     if (
@@ -35,12 +35,17 @@ export const ToastProvider = ({ children }) => {
     }
   }, [removeToast]);
 
-  const toast = {
+  const toastMethods = {
     success: (msg, dur) => showToast(msg, 'success', dur),
     error: (msg, dur) => showToast(msg, 'error', dur),
     warning: (msg, dur) => showToast(msg, 'warning', dur),
     info: (msg, dur) => showToast(msg, 'info', dur),
+    showToast,
+    removeToast,
   };
+
+  // Self-referential property so both `const { toast } = useToast()` and `const toast = useToast()` work seamlessly!
+  toastMethods.toast = toastMethods;
 
   const getToastStyles = (type) => {
     switch (type) {
@@ -69,7 +74,7 @@ export const ToastProvider = ({ children }) => {
   };
 
   return (
-    <ToastContext.Provider value={{ toast, showToast, removeToast }}>
+    <ToastContext.Provider value={toastMethods}>
       {children}
 
       {/* TOP-CENTER FIXED CONTAINER AT TOP-3 */}

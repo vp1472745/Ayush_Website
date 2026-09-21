@@ -747,6 +747,13 @@ export const Categories = () => {
       const compName = currentCompany?.name || 'Company';
       const exportData = getExportData();
 
+      const totalRunsCount =
+        footerSummaryData?.deliveredPickupTotal ??
+        footerSummaryData?.run ??
+        footerSummaryData?.totalRuns ??
+        footerSummaryData?.totalOrders ??
+        0;
+
       const payload = {
         toEmail: emailForm.toEmail.trim(),
         subject: emailForm.subject.trim() || `Please find the below data of ${selectedMonthFilter} ${compName}`,
@@ -757,19 +764,23 @@ export const Categories = () => {
         rows: exportData,
         summary: {
           totalRiders: displayedRows.length,
-          totalRuns: footerSummaryData?.run || 0,
+          totalRuns: totalRunsCount,
+          deliveredPickupTotal: totalRunsCount,
+          totalOrders: totalRunsCount,
           grossPayout: footerSummaryData?.payout || 0,
           finalPayout: footerSummaryData?.finalPayout || 0,
         },
       };
 
       const res = await apiClient.post(ENDPOINTS.RIDER_PAYOUTS.SEND_EMAIL, payload);
-      if (res.success) {
-        toast.success(`Payout export successfully sent to ${emailForm.toEmail}!`);
+      if (res?.success) {
+        toast.success(res.message || `Payout export successfully sent to ${emailForm.toEmail}!`);
         setIsEmailModalOpen(false);
+      } else {
+        toast.error(res?.message || 'Failed to deliver email. Please try again.');
       }
     } catch (err) {
-      toast.error(err.message || 'Failed to send email. Please check server settings.');
+      toast.error(err?.message || 'Failed to send email. Please check server settings.');
     } finally {
       setIsSendingEmail(false);
     }
@@ -1111,7 +1122,7 @@ export const Categories = () => {
           <button
             type="button"
             onClick={openEmailModal}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer shrink-0"
             title="Send Exported Payout Excel directly to Email"
           >
             <Mail className="w-3.5 h-3.5 text-rose-600" />

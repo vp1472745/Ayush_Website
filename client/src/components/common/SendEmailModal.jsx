@@ -20,7 +20,7 @@ export const SendEmailModal = ({
   rows = [],
   onSuccess,
 }) => {
-  const toast = useToast();
+  const { toast } = useToast();
   const [toEmail, setToEmail] = useState(defaultRecipient);
   const [subject, setSubject] = useState(defaultSubject);
   const [customMessage, setCustomMessage] = useState(defaultMessage);
@@ -72,15 +72,15 @@ export const SendEmailModal = ({
 
       const res = await apiClient.post(ENDPOINTS.EMAIL.SEND_REPORT, payload);
 
-      if (res.success) {
-        toast.success(`Report email successfully sent to ${toEmail.trim()}!`);
+      if (res?.success) {
+        toast.success(res.message || `${reportTitle} report successfully sent to ${toEmail.trim()}!`);
         if (onSuccess) onSuccess();
         onClose();
       } else {
-        toast.error(res.message || 'Failed to deliver email. Please try again.');
+        toast.error(res?.message || 'Failed to deliver email. Please try again.');
       }
     } catch (err) {
-      toast.error(err.message || 'Failed to send email. Please check server settings.');
+      toast.error(err?.message || 'Failed to send email. Please check server settings.');
     } finally {
       setIsSending(false);
     }
@@ -152,7 +152,7 @@ export const SendEmailModal = ({
             </div>
           </div>
 
-          {/* Custom Message */}
+          {/* Message / Notes */}
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
               Message / Notes (Optional)
