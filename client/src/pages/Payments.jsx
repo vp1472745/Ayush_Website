@@ -17,16 +17,23 @@ import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { formatCurrency } from '../utils/calculations';
 import { downloadExcel, downloadCSV } from '../utils/exportUtils';
 import apiClient from '../api/apiClient';
 import { ENDPOINTS } from '../api/endpoints';
 
 export const Payments = () => {
-  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear } = useCompany();
+  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear, fetchCompanies } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    fetchPayments();
+    if (typeof fetchCompanies === 'function') fetchCompanies();
+  });
 
   const fileInputRef = useRef(null);
   const exportMenuRef = useRef(null);

@@ -363,7 +363,7 @@ export const bulkImportRiderPayouts = async (req, res, next) => {
 
       if (primary > 0 || clubbed > 0) {
         deliveredPickupTotal = primary + clubbed;
-        payout = (primary * rateCard) + (clubbed * 6);
+        payout = (primary * rateCard) + (clubbed * (rateCard / 2));
       } else if (delivered > 0 || pickup > 0) {
         deliveredPickupTotal = delivered + pickup;
         payout = deliveredPickupTotal * rateCard;

@@ -3,6 +3,7 @@ import { User, Mail, Image as ImageIcon, Check, Camera, ShieldCheck, Upload, Tra
 import { useAuth } from '../context/AuthContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import {
   PageHeader,
   Card,
@@ -32,6 +33,15 @@ export const Profile = () => {
   const [customAvatarInput, setCustomAvatarInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    if (currentUser) {
+      setName(currentUser.name || 'Ayush Admin');
+      setEmail(currentUser.email || 'admin@example.com');
+      setAvatar(currentUser.avatar || AVATAR_PRESETS[0]);
+    }
+  });
 
   const fileInputRef = useRef(null);
 

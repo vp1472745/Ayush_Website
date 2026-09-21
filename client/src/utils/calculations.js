@@ -16,12 +16,12 @@ export const calculateRiderPayout = (riderOrPrimary, clubbedArg, rateCardArg) =>
     const primary = Number(riderOrPrimary.primary) || 0;
     const clubbed = Number(riderOrPrimary.clubbed) || 0;
     const rateCard = Number(riderOrPrimary.rateCard) || 12;
-    return (primary * rateCard) + (clubbed * 6);
+    return (primary * rateCard) + (clubbed * (rateCard / 2));
   }
   const primary = Number(riderOrPrimary) || 0;
   const clubbed = Number(clubbedArg) || 0;
   const rateCard = Number(rateCardArg) || 12;
-  return (primary * rateCard) + (clubbed * 6);
+  return (primary * rateCard) + (clubbed * (rateCard / 2));
 };
 
 /**

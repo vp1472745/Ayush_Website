@@ -16,16 +16,23 @@ import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { formatCurrency } from '../utils/calculations';
 import { downloadCSV, downloadExcel, downloadSampleTemplate } from '../utils/exportUtils';
 import apiClient from '../api/apiClient';
 import { ENDPOINTS } from '../api/endpoints';
 
 export const LossDetails = () => {
-  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear } = useCompany();
+  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear, fetchCompanies } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    fetchLossDetails();
+    if (typeof fetchCompanies === 'function') fetchCompanies();
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rowToDelete, setRowToDelete] = useState(null);

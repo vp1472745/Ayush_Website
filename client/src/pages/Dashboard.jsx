@@ -18,6 +18,7 @@ import {
 import { useCompany } from '../context/CompanyContext';
 import { useRiders } from '../context/RiderContext';
 import { useLock } from '../context/LockContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { formatCurrency, formatNumber, calculateCompanyStats } from '../utils/calculations';
 import {
   PageHeader,
@@ -37,9 +38,14 @@ import {
 
 export const Dashboard = () => {
   const navigate = useNavigate();
-  const { companies } = useCompany();
+  const { companies, fetchCompanies } = useCompany();
   const { riders, addRider, updateRider, deleteRider } = useRiders();
   const { canEdit } = useLock();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    if (typeof fetchCompanies === 'function') fetchCompanies();
+  });
 
   // Filters
   const [dateFilter, setDateFilter] = useState('this_month');

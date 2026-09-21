@@ -20,6 +20,7 @@ import { ConfirmationModal, Pagination, SendEmailModal } from '../components/com
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { formatCurrency } from '../utils/calculations';
 import { downloadCSV, downloadExcel } from '../utils/exportUtils';
 import apiClient from '../api/apiClient';
@@ -29,6 +30,11 @@ export const Advanced = () => {
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    fetchAdvances();
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rowToDelete, setRowToDelete] = useState(null);

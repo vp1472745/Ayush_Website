@@ -91,7 +91,7 @@ riderPayoutSchema.pre('save', function (next) {
 
   if (prim > 0 || club > 0) {
     this.deliveredPickupTotal = prim + club;
-    this.payout = (prim * rate) + (club * 6);
+    this.payout = (prim * rate) + (club * (rate / 2));
   } else if (deliv > 0 || pick > 0) {
     this.deliveredPickupTotal = deliv + pick;
     this.payout = this.deliveredPickupTotal * rate;

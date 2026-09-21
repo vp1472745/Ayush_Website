@@ -17,6 +17,7 @@ import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { formatCurrency } from '../utils/calculations';
 import { downloadCSV, downloadExcel, downloadSampleTemplate } from '../utils/exportUtils';
 import apiClient from '../api/apiClient';
@@ -29,10 +30,17 @@ export const Categories = () => {
     setSelectedCompanyFilter,
     selectedMonthFilter,
     selectedFinancialYear,
+    fetchCompanies,
   } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    fetchPayouts();
+    if (typeof fetchCompanies === 'function') fetchCompanies();
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rowToDelete, setRowToDelete] = useState(null);
@@ -267,7 +275,7 @@ export const Categories = () => {
               payout = total * nextRate;
             } else {
               total = p + c;
-              payout = (p * 12) + (c * 6);
+              payout = (p * nextRate) + (c * (nextRate / 2));
             }
 
             const currentAdv = Number(row.advance) || 0;
@@ -416,11 +424,11 @@ export const Categories = () => {
             } else if (field === 'primary' || field === 'clubbed') {
               total = p + c;
               nextRow.deliveredPickupTotal = total;
-              payout = (p * 12) + (c * 6);
+              payout = (p * r) + (c * (r / 2));
             } else {
               if (p > 0 || c > 0) {
                 total = p + c;
-                payout = (p * 12) + (c * 6);
+                payout = (p * r) + (c * (r / 2));
                 nextRow.deliveredPickupTotal = total;
               } else {
                 total = Number(nextRow.deliveredPickupTotal) || 0;
@@ -613,7 +621,7 @@ export const Categories = () => {
       const pick = Number(r.pickup) || 0;
       const total = isDeliveredPickupFormat ? deliv + pick : (p + c || r.deliveredPickupTotal || 0);
       const rate = Number(r.rateCard) || 12;
-      const payout = isDeliveredPickupFormat ? total * rate : (p * 12) + (c * 6);
+      const payout = isDeliveredPickupFormat ? total * rate : (p * rate) + (c * (rate / 2));
       const loss = Number(r.loss) || 0;
       const advance = Number(r.advance) || 0;
       const finalPayout = payout - loss - advance;

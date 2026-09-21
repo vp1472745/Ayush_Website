@@ -8,10 +8,12 @@ import {
   Building2,
   Calendar,
   User,
+  RotateCw,
 } from 'lucide-react';
 import { useLock } from '../../context/LockContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCompany } from '../../context/CompanyContext';
+import { useRefresh } from '../../context/RefreshContext';
 import { Dropdown } from '../common/Dropdown';
 import { CustomDropdown } from '../common/CustomDropdown';
 
@@ -32,6 +34,7 @@ export const Header = () => {
     selectedFinancialYear,
     setSelectedFinancialYear,
   } = useCompany();
+  const { isRefreshing, triggerRefresh } = useRefresh();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -181,6 +184,22 @@ export const Header = () => {
               <span>Edit Mode</span>
             </>
           )}
+        </button>
+
+        {/* TAB REFRESH BUTTON (Refreshes currently active tab data) */}
+        <button
+          type="button"
+          onClick={() => triggerRefresh(true)}
+          disabled={isRefreshing}
+          title={`Refresh ${getPageTitle()} data`}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-2xs cursor-pointer select-none shrink-0"
+        >
+          <RotateCw
+            className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-500 ${
+              isRefreshing ? 'animate-spin text-[#E53935]' : ''
+            }`}
+          />
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 

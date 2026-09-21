@@ -20,6 +20,7 @@ import * as XLSX from 'xlsx';
 import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { downloadExcel, downloadCSV } from '../utils/exportUtils';
 import {
   ProtectedAction,
@@ -33,9 +34,16 @@ import {
 } from '../components/common';
 
 export const SettingsHub = () => {
-  const { companies, updateCompany, toggleCompanyStatus, addCompany, deleteCompany } = useCompany();
+  const { companies, updateCompany, toggleCompanyStatus, addCompany, deleteCompany, fetchCompanies } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    if (typeof fetchCompanies === 'function') {
+      fetchCompanies();
+    }
+  });
 
   const fileInputRef = useRef(null);
   const exportMenuRef = useRef(null);

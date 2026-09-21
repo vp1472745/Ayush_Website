@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
+import { RefreshProvider } from './context/RefreshContext';
 import { LockProvider } from './context/LockContext';
 import { AuthProvider } from './context/AuthContext';
 import { CompanyProvider } from './context/CompanyContext';
@@ -29,21 +30,23 @@ export default function App() {
       )}
       <BrowserRouter>
         <ToastProvider>
-          <LockProvider>
-            <AuthProvider>
-              <CompanyProvider>
-                <CategoryProvider>
-                  <RiderProvider>
-                    <ExpenseProvider>
-                      <PaymentProvider>
-                        <AppRoutes />
-                      </PaymentProvider>
-                    </ExpenseProvider>
-                  </RiderProvider>
-                </CategoryProvider>
-              </CompanyProvider>
-            </AuthProvider>
-          </LockProvider>
+          <RefreshProvider>
+            <LockProvider>
+              <AuthProvider>
+                <CompanyProvider>
+                  <CategoryProvider>
+                    <RiderProvider>
+                      <ExpenseProvider>
+                        <PaymentProvider>
+                          <AppRoutes />
+                        </PaymentProvider>
+                      </ExpenseProvider>
+                    </RiderProvider>
+                  </CategoryProvider>
+                </CompanyProvider>
+              </AuthProvider>
+            </LockProvider>
+          </RefreshProvider>
         </ToastProvider>
       </BrowserRouter>
     </>

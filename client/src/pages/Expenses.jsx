@@ -15,6 +15,7 @@ import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { useTabRefresh } from '../context/RefreshContext';
 import { formatCurrency } from '../utils/calculations';
 import { downloadExcel, downloadCSV } from '../utils/exportUtils';
 import apiClient from '../api/apiClient';
@@ -25,6 +26,11 @@ export const Expenses = () => {
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
+
+  // Tab Refresh Hook
+  useTabRefresh(() => {
+    fetchHubExpenses();
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rowToDelete, setRowToDelete] = useState(null);
