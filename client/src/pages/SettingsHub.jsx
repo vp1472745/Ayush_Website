@@ -369,52 +369,91 @@ export const SettingsHub = () => {
           return;
         }
 
-        const headerRow = (rawJson[0] || []).map((h) => String(h).toLowerCase().trim());
-        const findColIdx = (possibleNames) => {
-          return headerRow.findIndex((h) => possibleNames.some((n) => h.includes(n)));
+        const headerRow = (rawJson[0] || []).map((h) => String(h || '').toLowerCase().trim());
+        const findColIdx = (aliases) => {
+          // 1. Exact match
+          for (const alias of aliases) {
+            const idx = headerRow.findIndex((h) => h === alias);
+            if (idx !== -1) return idx;
+          }
+          // 2. Word boundary match
+          for (const alias of aliases) {
+            const pattern = new RegExp(`(^|[^a-z0-9])${alias.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
+            const idx = headerRow.findIndex((h) => pattern.test(h));
+            if (idx !== -1) return idx;
+          }
+          // 3. Substring match for longer phrases (>= 4 chars)
+          for (const alias of aliases) {
+            if (alias.length >= 4) {
+              const idx = headerRow.findIndex((h) => h.includes(alias));
+              if (idx !== -1) return idx;
+            }
+          }
+          return -1;
         };
 
         const riderCombinedIdx = findColIdx(['rider name/rider id', 'rider name / rider id', 'rider name/id', 'rider combined', 'rider/id', 'rider id/name']);
-        const riderNameIdx = findColIdx(['rider name', 'rider_name', 'name']);
-        const riderIdIdx = findColIdx(['rider id', 'rider_id', 'id', 'emp id', 'code']);
-        const rateIdx = findColIdx(['rate', 'rate card', 'ratecard']);
-        const primaryIdx = findColIdx(['primary']);
-        const clubbedIdx = findColIdx(['clubbed']);
+        const riderNameIdx = findColIdx(['rider name', 'rider_name', 'name', 'rider']);
+        const riderIdIdx = findColIdx(['rider id', 'rider_id', 'id', 'emp id', 'employee id', 'rider code', 'code']);
+        const rateIdx = findColIdx(['rate', 'rate card', 'ratecard', 'rate per order']);
+        const primaryIdx = findColIdx(['primary', 'primary order', 'primary count']);
+        const clubbedIdx = findColIdx(['clubbed', 'clubbed order', 'clubbed count']);
 
         const parsedRiders = [];
 
         for (let i = 1; i < rawJson.length; i++) {
           const row = rawJson[i];
-          if (!row || row.every((c) => String(c).trim() === '')) continue;
+          if (!row || row.every((c) => String(c ?? '').trim() === '')) continue;
 
-          let rCombined = '';
-          if (riderCombinedIdx >= 0 && row[riderCombinedIdx]) {
-            rCombined = String(row[riderCombinedIdx]).trim();
-          } else if (riderNameIdx >= 0 && row[riderNameIdx]) {
-            rCombined = String(row[riderNameIdx]).trim();
-          } else if (row[0]) {
-            rCombined = String(row[0]).trim();
+          let rawCombined = riderCombinedIdx >= 0 && row[riderCombinedIdx] !== undefined ? String(row[riderCombinedIdx]).trim() : '';
+          let rawName = riderNameIdx >= 0 && riderNameIdx !== riderCombinedIdx && row[riderNameIdx] !== undefined ? String(row[riderNameIdx]).trim() : '';
+          let rawId = riderIdIdx >= 0 && riderIdIdx !== riderNameIdx && riderIdIdx !== riderCombinedIdx && row[riderIdIdx] !== undefined ? String(row[riderIdIdx]).trim() : '';
+
+          // If no recognized column, fallback to column 0
+          if (!rawCombined && !rawName && !rawId && row[0] !== undefined) {
+            rawCombined = String(row[0]).trim();
           }
 
-          let rId = riderIdIdx >= 0 && riderIdIdx !== riderNameIdx && riderIdIdx !== riderCombinedIdx ? String(row[riderIdIdx] || '').trim() : '';
-          let rName = riderNameIdx >= 0 && riderNameIdx !== riderCombinedIdx ? String(row[riderNameIdx] || '').trim() : '';
+          let rId = rawId;
+          let rName = rawName;
+          let rCombined = rawCombined;
 
-          const parsed = parseRiderIdentifier(rCombined || (rName && rId ? `${rName} - ${rId}` : rName || rId));
-          if (!rId && parsed.riderId) rId = parsed.riderId;
-          if (!rName && parsed.riderName) rName = parsed.riderName;
-          if (!rCombined) {
-            rCombined = rName && rId ? `${rName} - ${rId}` : (rName || rId || '');
+          if (rName && rId) {
+            if (!rCombined) {
+              rCombined = `${rName} - ${rId}`;
+            }
+          } else if (rCombined) {
+            const parsed = parseRiderIdentifier(rCombined);
+            if (!rId && parsed.riderId) rId = parsed.riderId;
+            if (!rName && parsed.riderName) rName = parsed.riderName;
+            if (!rCombined) {
+              rCombined = rName && rId ? `${rName} - ${rId}` : (rName || rId || '');
+            }
+          } else if (rName && !rId) {
+            const parsed = parseRiderIdentifier(rName);
+            if (parsed.riderId) {
+              rId = parsed.riderId;
+              rName = parsed.riderName;
+            }
+            rCombined = rId && rName ? `${rName} - ${rId}` : (rName || rId || '');
+          } else if (rId && !rName) {
+            const parsed = parseRiderIdentifier(rId);
+            if (parsed.riderName) {
+              rName = parsed.riderName;
+              rId = parsed.riderId;
+            }
+            rCombined = rId && rName ? `${rName} - ${rId}` : (rName || rId || '');
           }
 
-          const rate = rateIdx >= 0 ? Number(row[rateIdx]) || 0 : 0;
-          const primary = primaryIdx >= 0 ? Number(row[primaryIdx]) || 0 : 0;
-          const clubbed = clubbedIdx >= 0 ? Number(row[clubbedIdx]) || 0 : 0;
+          const rate = rateIdx >= 0 && row[rateIdx] !== undefined && row[rateIdx] !== '' ? Number(row[rateIdx]) || 0 : 0;
+          const primary = primaryIdx >= 0 && row[primaryIdx] !== undefined && row[primaryIdx] !== '' ? Number(row[primaryIdx]) || 0 : 0;
+          const clubbed = clubbedIdx >= 0 && row[clubbedIdx] !== undefined && row[clubbedIdx] !== '' ? Number(row[clubbedIdx]) || 0 : 0;
 
           if (rName || rId || rCombined) {
             parsedRiders.push({
               riderId: rId,
               riderName: rName,
-              riderCombined: rCombined,
+              riderCombined: rCombined || (rName && rId ? `${rName} - ${rId}` : rName || rId || ''),
               rate,
               primary,
               clubbed,

@@ -271,14 +271,29 @@ export const Payments = () => {
           return;
         }
 
-        const headerRow = (rawJson[0] || []).map((h) => String(h).toLowerCase().trim());
-        const findColIdx = (possibleNames) => {
-          return headerRow.findIndex((h) => possibleNames.some((n) => h.includes(n)));
+        const headerRow = (rawJson[0] || []).map((h) => String(h || '').toLowerCase().trim());
+        const findColIdx = (aliases) => {
+          for (const alias of aliases) {
+            const idx = headerRow.findIndex((h) => h === alias);
+            if (idx !== -1) return idx;
+          }
+          for (const alias of aliases) {
+            const pattern = new RegExp(`(^|[^a-z0-9])${alias.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
+            const idx = headerRow.findIndex((h) => pattern.test(h));
+            if (idx !== -1) return idx;
+          }
+          for (const alias of aliases) {
+            if (alias.length >= 4) {
+              const idx = headerRow.findIndex((h) => h.includes(alias));
+              if (idx !== -1) return idx;
+            }
+          }
+          return -1;
         };
 
         const txnIdx = findColIdx(['transaction', 'txn', 'transaction id']);
         const riderNameIdx = findColIdx(['rider name', 'rider_name', 'name', 'rider']);
-        const riderIdIdx = findColIdx(['rider id', 'rider_id', 'id']);
+        const riderIdIdx = findColIdx(['rider id', 'rider_id', 'id', 'emp id', 'employee id', 'code']);
         const payoutIdx = findColIdx(['gross', 'payout', 'gross payout']);
         const lossIdx = findColIdx(['loss', 'loss deduction']);
         const advanceIdx = findColIdx(['advance', 'advance deduction']);

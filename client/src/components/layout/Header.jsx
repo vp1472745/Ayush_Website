@@ -114,11 +114,11 @@ export const Header = () => {
           {getPageTitle()}
         </span>
 
-        {/* Separator shown only when filters are visible */}
-        {location.pathname !== '/advanced' && <span className="text-gray-300 hidden sm:inline">|</span>}
+        {/* Separator between page title and header controls */}
+        <span className="text-gray-300 hidden sm:inline">|</span>
 
-        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Hub Expenses & Advanced */}
-        {location.pathname !== '/hub-expenses' && location.pathname !== '/expenses' && location.pathname !== '/advanced' && (
+        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Settings, Hub Expenses, Advanced & Profile */}
+        {!['/hub-expenses', '/expenses', '/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedCompanyFilter}
             onChange={setSelectedCompanyFilter}
@@ -130,8 +130,8 @@ export const Header = () => {
           />
         )}
 
-        {/* Global Financial Year Dropdown - Hidden on Advanced */}
-        {location.pathname !== '/advanced' && (
+        {/* Global Financial Year Dropdown - Hidden on Settings, Advanced & Profile */}
+        {!['/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedFinancialYear}
             onChange={setSelectedFinancialYear}
@@ -143,8 +143,8 @@ export const Header = () => {
           />
         )}
 
-        {/* Global Month Filter Dropdown - Hidden on Advanced */}
-        {location.pathname !== '/advanced' && (
+        {/* Global Month Filter Dropdown - Hidden on Settings, Advanced & Profile */}
+        {!['/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedMonthFilter}
             onChange={setSelectedMonthFilter}

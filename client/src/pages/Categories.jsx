@@ -820,21 +820,36 @@ export const Categories = () => {
           return;
         }
 
-        const headerRow = (rawJson[0] || []).map((h) => String(h).toLowerCase().trim());
-        const findColIdx = (possibleNames) => {
-          return headerRow.findIndex((h) => possibleNames.some((n) => h.includes(n)));
+        const headerRow = (rawJson[0] || []).map((h) => String(h || '').toLowerCase().trim());
+        const findColIdx = (aliases) => {
+          for (const alias of aliases) {
+            const idx = headerRow.findIndex((h) => h === alias);
+            if (idx !== -1) return idx;
+          }
+          for (const alias of aliases) {
+            const pattern = new RegExp(`(^|[^a-z0-9])${alias.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
+            const idx = headerRow.findIndex((h) => pattern.test(h));
+            if (idx !== -1) return idx;
+          }
+          for (const alias of aliases) {
+            if (alias.length >= 4) {
+              const idx = headerRow.findIndex((h) => h.includes(alias));
+              if (idx !== -1) return idx;
+            }
+          }
+          return -1;
         };
 
         const riderNameIdx = findColIdx(['rider name', 'rider_name', 'name', 'rider']);
-        const riderIdIdx = findColIdx(['rider id', 'rider_id', 'id', 'emp id', 'code']);
-        const primaryIdx = findColIdx(['primary']);
-        const clubbedIdx = findColIdx(['clubbed']);
+        const riderIdIdx = findColIdx(['rider id', 'rider_id', 'id', 'emp id', 'employee id', 'code']);
+        const primaryIdx = findColIdx(['primary', 'primary order']);
+        const clubbedIdx = findColIdx(['clubbed', 'clubbed order']);
         const deliveredIdx = findColIdx(['delivered', 'delievred']);
         const pickupIdx = findColIdx(['pickup', 'pick up']);
         const totalIdx = findColIdx(['total', 'delivered / pickup', 'delivered/pickup']);
         const rateCardIdx = findColIdx(['rate card', 'ratecard', 'rate']);
-        const lossIdx = findColIdx(['loss']);
-        const advanceIdx = findColIdx(['advance']);
+        const lossIdx = findColIdx(['loss', 'loss deduction']);
+        const advanceIdx = findColIdx(['advance', 'advance deduction']);
         const statusIdx = findColIdx(['status', 'payment status', 'payment stauts']);
         const remarkIdx = findColIdx(['remark', 'ayush remark', 'ayush_remark']);
 

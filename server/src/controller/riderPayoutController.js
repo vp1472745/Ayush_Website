@@ -44,28 +44,39 @@ function parseRiderIdentifier(idInput, nameInput, combinedInput) {
   let riderName = (nameInput || '').toString().trim();
   let riderCombined = (combinedInput || '').toString().trim();
 
-  // Strip leading/trailing hyphens, slashes, colons, spaces
-  let raw = (riderCombined || (riderName && !riderId ? riderName : (riderId && !riderName ? riderId : ''))).toString().trim();
+  // Strip leading/trailing punctuation/spaces
+  riderId = riderId.replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
+  riderName = riderName.replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
+  riderCombined = riderCombined.replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
+
+  // If riderId and riderName are already distinct and non-empty
+  if (riderId && riderName && !/^\d+$/.test(riderName)) {
+    if (!riderCombined) {
+      riderCombined = `${riderName} - ${riderId}`;
+    }
+    return { riderId, riderName, riderCombined };
+  }
+
+  // If riderId or riderName is missing, extract from combined or available field
+  let raw = (riderCombined || riderName || riderId || '').toString().trim();
   raw = raw.replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
 
   if (raw) {
     // 1. Digits first, then name: "123456 - Vineet", "123456/Vineet", "123456 Vineet"
     let m = raw.match(/^(\d+)[\s\-_/:|]+(.+)$/);
     if (m) {
-      riderId = m[1].trim();
-      riderName = m[2].replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
+      if (!riderId) riderId = m[1].trim();
+      if (!riderName) riderName = m[2].replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
     } else {
       // 2. Name first, then digits: "Vineet Pancheshwar - 123456", "Vineet / 123456", "Shubham - 789"
       m = raw.match(/^(.+?)[\s\-_/:|]+(\d+)$/);
       if (m) {
-        riderId = m[2].trim();
-        riderName = m[1].replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
+        if (!riderId) riderId = m[2].trim();
+        if (!riderName) riderName = m[1].replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
       } else if (/^\d+$/.test(raw)) {
-        riderId = raw;
-        riderName = '';
+        if (!riderId) riderId = raw;
       } else {
-        riderName = raw;
-        riderId = '';
+        if (!riderName) riderName = raw;
       }
     }
   }
@@ -74,26 +85,17 @@ function parseRiderIdentifier(idInput, nameInput, combinedInput) {
   if (riderId) riderId = riderId.replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
   if (riderName) riderName = riderName.replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
 
+  // If riderName is only digits and riderId is empty, swap
   if (riderName && !riderId && /^\d+$/.test(riderName)) {
     riderId = riderName;
     riderName = '';
   }
 
-  if (riderName && !riderId) {
-    let m = riderName.match(/^(\d+)[\s\-_/:|]+(.+)$/);
-    if (m) {
-      riderId = m[1].trim();
-      riderName = m[2].replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
-    } else {
-      m = riderName.match(/^(.+?)[\s\-_/:|]+(\d+)$/);
-      if (m) {
-        riderId = m[2].trim();
-        riderName = m[1].replace(/^[\s\-_/:|]+|[\s\-_/:|]+$/g, '').trim();
-      }
-    }
+  if (!riderCombined) {
+    riderCombined = riderName && riderId ? `${riderName} - ${riderId}` : (riderName || riderId || '');
   }
 
-  return { riderId, riderName, riderCombined: raw };
+  return { riderId, riderName, riderCombined };
 }
 
 function findMatchingRiderInCompany(companyRiders, inputId, inputName) {
