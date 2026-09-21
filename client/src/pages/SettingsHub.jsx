@@ -29,6 +29,7 @@ import {
   Modal,
   ConfirmationModal,
   SampleTemplateDropdown,
+  CommonTable,
 } from '../components/common';
 
 export const SettingsHub = () => {
@@ -43,8 +44,8 @@ export const SettingsHub = () => {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   // Working riders list for the selected company
   const [currentRiders, setCurrentRiders] = useState([]);
-  // Selected rider row indices for bulk operations
-  const [selectedRiderIndices, setSelectedRiderIndices] = useState([]);
+  // Selected rider row IDs for bulk operations in CommonTable
+  const [selectedRiderIds, setSelectedRiderIds] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
@@ -103,13 +104,115 @@ export const SettingsHub = () => {
     }));
   }, [companies]);
 
+  // Rider Search Filter
+  const [riderSearchQuery, setRiderSearchQuery] = useState('');
+
+  // Dynamic Table Columns for CommonTable based on company format
+  const tableColumns = useMemo(() => {
+    if (companyFormat === 'valmo' || companyFormat === 'xpressbees') {
+      return [
+        {
+          key: 'riderCombined',
+          label: 'Rider Name/Rider ID',
+          minWidth: '260px',
+          isEditable: true,
+          placeholder: 'e.g. 1018329-Sachin Sahu',
+        },
+        {
+          key: 'rate',
+          label: 'Rate Card',
+          minWidth: '120px',
+          align: 'right',
+          isEditable: true,
+          type: 'number',
+          placeholder: '0',
+        },
+      ];
+    }
+
+    // Shadowfax format
+    return [
+      {
+        key: 'riderName',
+        label: 'Rider Name',
+        minWidth: '180px',
+        isEditable: true,
+        placeholder: 'e.g. Sachin Sahu',
+      },
+      {
+        key: 'riderId',
+        label: 'Rider ID',
+        minWidth: '130px',
+        isEditable: true,
+        placeholder: 'e.g. 1018329',
+      },
+      {
+        key: 'rate',
+        label: 'Rate Card',
+        minWidth: '110px',
+        align: 'right',
+        isEditable: true,
+        type: 'number',
+        placeholder: '0',
+      },
+      {
+        key: 'primary',
+        label: 'Primary',
+        minWidth: '110px',
+        align: 'right',
+        isEditable: true,
+        type: 'number',
+        placeholder: '0',
+      },
+      {
+        key: 'clubbed',
+        label: 'Clubbed',
+        minWidth: '110px',
+        align: 'right',
+        isEditable: true,
+        type: 'number',
+        placeholder: '0',
+      },
+    ];
+  }, [companyFormat]);
+
+  // Filtered Riders based on riderSearchQuery
+  const displayedRiders = useMemo(() => {
+    if (!riderSearchQuery.trim()) return currentRiders;
+    const q = riderSearchQuery.toLowerCase().trim();
+    return currentRiders.filter(
+      (r) =>
+        r.riderName?.toLowerCase().includes(q) ||
+        r.riderId?.toLowerCase().includes(q) ||
+        r.riderCombined?.toLowerCase().includes(q)
+    );
+  }, [currentRiders, riderSearchQuery]);
+
+  // Footer Summary Data matching exact Categories.jsx / Payout Details table format
+  const footerSummaryData = useMemo(() => {
+    const totalRate = displayedRiders.reduce((sum, r) => sum + (Number(r.rate) || 0), 0);
+    const totalPrimary = displayedRiders.reduce((sum, r) => sum + (Number(r.primary) || 0), 0);
+    const totalClubbed = displayedRiders.reduce((sum, r) => sum + (Number(r.clubbed) || 0), 0);
+
+    return {
+      riderCombined: `Total (${displayedRiders.length} Riders)`,
+      riderName: `Total (${displayedRiders.length} Riders)`,
+      riderId: '-',
+      rate: totalRate > 0 ? totalRate : '-',
+      rateCard: totalRate > 0 ? totalRate : '-',
+      primary: totalPrimary,
+      clubbed: totalClubbed,
+    };
+  }, [displayedRiders]);
+
   // Sync current riders whenever the selected company changes or companies data updates
   useEffect(() => {
-    setSelectedRiderIndices([]);
+    setSelectedRiderIds([]);
     if (activeCompany) {
       if (Array.isArray(activeCompany.riders) && activeCompany.riders.length > 0) {
         setCurrentRiders(
-          activeCompany.riders.map((r) => ({
+          activeCompany.riders.map((r, idx) => ({
+            id: r._id || r.id || `rider_${idx}_${Date.now()}`,
             riderId: r.riderId || '',
             riderName: r.riderName || '',
             riderCombined:
@@ -124,6 +227,7 @@ export const SettingsHub = () => {
         // Initial empty row
         setCurrentRiders([
           {
+            id: `rider_0_${Date.now()}`,
             riderId: '',
             riderName: '',
             riderCombined: '',
@@ -141,6 +245,7 @@ export const SettingsHub = () => {
     setCurrentRiders((prev) => [
       ...prev,
       {
+        id: `rider_new_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         riderId: '',
         riderName: '',
         riderCombined: '',
@@ -151,13 +256,53 @@ export const SettingsHub = () => {
     ]);
   };
 
-  // Remove Single Rider Row Helper
-  const handleRemoveRiderRow = (index) => {
+  // Cell Change for CommonTable
+  const handleCellChange = (rowId, field, value) => {
+    setCurrentRiders((prev) =>
+      prev.map((r) => {
+        if (r.id !== rowId) return r;
+        let finalValue = value;
+        if (['rate', 'primary', 'clubbed'].includes(field)) {
+          let str = String(value ?? '').trim();
+          if (/^0+[0-9]+/.test(str)) {
+            str = str.replace(/^0+/, '');
+          }
+          finalValue = str;
+        }
+        const updated = { ...r, [field]: finalValue };
+
+        // Sync riderCombined if riderId or riderName changes
+        if (field === 'riderId' || field === 'riderName') {
+          const idVal = field === 'riderId' ? String(value || '').trim() : (r.riderId || '').trim();
+          const nameVal = field === 'riderName' ? String(value || '').trim() : (r.riderName || '').trim();
+          if (idVal && nameVal) {
+            updated.riderCombined = `${nameVal} - ${idVal}`;
+          } else {
+            updated.riderCombined = nameVal || idVal || '';
+          }
+        }
+
+        // If updating riderCombined directly (Valmo / Xpressbees), parse into riderId and riderName
+        if (field === 'riderCombined') {
+          const rawVal = String(value || '');
+          const { riderId, riderName } = parseRiderIdentifier(rawVal);
+          updated.riderCombined = rawVal;
+          updated.riderId = riderId;
+          updated.riderName = riderName;
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Remove Single Rider Row Helper for CommonTable
+  const handleDeleteRow = (rowId) => {
     setCurrentRiders((prev) => {
-      const updated = prev.filter((_, idx) => idx !== index);
+      const updated = prev.filter((r) => r.id !== rowId);
       return updated.length === 0
         ? [
             {
+              id: `rider_empty_${Date.now()}`,
               riderId: '',
               riderName: '',
               riderCombined: '',
@@ -168,51 +313,30 @@ export const SettingsHub = () => {
           ]
         : updated;
     });
-    setSelectedRiderIndices((prev) =>
-      prev
-        .filter((i) => i !== index)
-        .map((i) => (i > index ? i - 1 : i))
-    );
+    setSelectedRiderIds((prev) => prev.filter((id) => id !== rowId));
   };
 
-  // Toggle Row Selection
-  const handleToggleSelectRow = (index) => {
-    setSelectedRiderIndices((prev) =>
-      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
-    );
-  };
-
-  // Toggle Select All
-  const handleToggleSelectAll = () => {
-    if (selectedRiderIndices.length === currentRiders.length) {
-      setSelectedRiderIndices([]);
-    } else {
-      setSelectedRiderIndices(currentRiders.map((_, idx) => idx));
-    }
-  };
-
-  // Delete Selected / Bulk Delete
-  const handleDeleteSelectedRiders = () => {
-    if (selectedRiderIndices.length === 0) return;
-    const count = selectedRiderIndices.length;
-    const remaining = currentRiders.filter((_, idx) => !selectedRiderIndices.includes(idx));
-
-    if (remaining.length === 0) {
-      setCurrentRiders([
-        {
-          riderId: '',
-          riderName: '',
-          riderCombined: '',
-          rate: 0,
-          primary: 0,
-          clubbed: 0,
-        },
-      ]);
-    } else {
-      setCurrentRiders(remaining);
-    }
-    setSelectedRiderIndices([]);
-    toast.success(`Removed ${count} selected rider ${count === 1 ? 'box' : 'boxes'}.`);
+  // Bulk Delete Helper for CommonTable
+  const handleBulkDelete = (idsToDelete) => {
+    if (!idsToDelete || idsToDelete.length === 0) return;
+    setCurrentRiders((prev) => {
+      const updated = prev.filter((r) => !idsToDelete.includes(r.id));
+      return updated.length === 0
+        ? [
+            {
+              id: `rider_empty_${Date.now()}`,
+              riderId: '',
+              riderName: '',
+              riderCombined: '',
+              rate: 0,
+              primary: 0,
+              clubbed: 0,
+            },
+          ]
+        : updated;
+    });
+    setSelectedRiderIds([]);
+    toast.success(`Removed ${idsToDelete.length} selected rider${idsToDelete.length > 1 ? 's' : ''}.`);
   };
 
   // Universal Parser for Rider ID & Name (supports "ID - Name", "Name - ID", "ID / Name", "ID only", "Name only")
@@ -451,6 +575,7 @@ export const SettingsHub = () => {
 
           if (rName || rId || rCombined) {
             parsedRiders.push({
+              id: `rider_imported_${i}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               riderId: rId,
               riderName: rName,
               riderCombined: rCombined || (rName && rId ? `${rName} - ${rId}` : rName || rId || ''),
@@ -463,7 +588,7 @@ export const SettingsHub = () => {
 
         if (parsedRiders.length > 0) {
           setCurrentRiders(parsedRiders);
-          setSelectedRiderIndices([]);
+          setSelectedRiderIds([]);
           toast.success(`Successfully loaded ${parsedRiders.length} riders from file! Click "Save Rider Settings" to apply.`);
         } else {
           toast.error('No valid rider rows found in the uploaded file.');
@@ -623,11 +748,8 @@ export const SettingsHub = () => {
     }
   };
 
-  const isAllSelected = currentRiders.length > 0 && selectedRiderIndices.length === currentRiders.length;
-  const isSomeSelected = selectedRiderIndices.length > 0 && selectedRiderIndices.length < currentRiders.length;
-
   return (
-    <div className="space-y-3 w-full flex flex-col">
+    <div className="h-full w-full flex flex-col min-h-0 gap-2">
       {/* Hidden File Input for Rider Upload */}
       <input
         type="file"
@@ -637,16 +759,20 @@ export const SettingsHub = () => {
         className="hidden"
       />
 
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-white p-3 rounded-xl border border-gray-200/80 shadow-xs">
-        <div>
-          <h2 className="text-sm sm:text-base font-bold text-gray-900 flex items-center gap-2">
-            <Building2 className="w-4.5 h-4.5 text-[#E53935]" />
-            <span>Company & Rider Settings</span>
-          </h2>
-          <p className="text-[11px] text-gray-500 mt-0.5">
-            Configure rider details, rate cards, and parameters per logistics company
-          </p>
+      {/* Top Header & Company Registry Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-gray-200/80 shadow-xs shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-red-50 text-[#E53935] flex items-center justify-center border border-red-100 shadow-2xs">
+            <Building2 className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="text-xs sm:text-sm font-bold text-gray-900 leading-tight">
+              Company & Rider Settings
+            </h2>
+            <p className="text-[10px] text-gray-500">
+              Configure rider details, rate cards, and parameters per logistics company
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
@@ -654,7 +780,7 @@ export const SettingsHub = () => {
             <button
               type="button"
               onClick={() => setIsAddCompanyModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 bg-[#E53935] text-white hover:bg-[#D32F2F] shadow-2xs cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-[#E53935] text-white hover:bg-[#D32F2F] shadow-2xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Company</span>
@@ -664,108 +790,91 @@ export const SettingsHub = () => {
           <button
             type="button"
             onClick={() => setIsViewCompaniesModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE] hover:bg-[#E0E7FF] shadow-2xs cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-200 bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE] hover:bg-[#E0E7FF] shadow-2xs cursor-pointer"
           >
-            <Building2 className="w-4 h-4 text-[#4F46E5]" />
+            <Building2 className="w-3.5 h-3.5 text-[#4F46E5]" />
             <span>View Registered Companies</span>
-            <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-200/70 text-indigo-900">
+            <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-indigo-200/70 text-indigo-900">
               {companies.length}
             </span>
           </button>
         </div>
       </div>
 
-      {/* COMPANY SELECTOR & RIDER CONFIGURATION CARD */}
-      <div className="bg-white border border-gray-200/80 shadow-xs rounded-xl p-4 sm:p-5 space-y-4">
-        {/* Company Dropdown Selection & Info Header */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-gray-50/80 p-3.5 rounded-xl border border-gray-200">
-          <div>
-            <label className="block text-xs font-bold text-gray-800 mb-1.5">
-              Select Logistics Company
-            </label>
-            <CustomDropdown
-              value={selectedCompanyId}
-              onChange={(val) => setSelectedCompanyId(val)}
-              options={companyDropdownOptions}
-              searchable={true}
-              fullWidth={true}
-              icon={Building2}
-              placeholder="Select Logistics Company"
-            />
-          </div>
-
-          {activeCompany && (
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-1 sm:pt-0">
-              <div className="text-right sm:text-right">
-                <div className="flex items-center gap-2 sm:justify-end">
-                  <span className="text-xs font-bold text-gray-900">{activeCompany.name}</span>
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                      activeCompany.status === 'Active'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {activeCompany.status}
-                  </span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-0.5 font-medium">
-                  {companyFormat === 'shadowfax' && 'Shadowfax Format (Primary + Clubbed + Rate)'}
-                  {companyFormat === 'xpressbees' && 'XpressBees Format (Delivered + Pickup + Rate)'}
-                  {companyFormat === 'valmo' && 'Valmo Format (Combined Rider Name/ID + Rate)'}
-                </div>
-              </div>
-
-              <ProtectedAction actionName="toggle company status">
-                <button
-                  type="button"
-                  onClick={() => toggleCompanyStatus(activeCompany.id || activeCompany._id)}
-                  className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer shadow-2xs self-start sm:self-auto"
-                >
-                  {activeCompany.status === 'Active' ? 'Deactivate' : 'Activate'}
-                </button>
-              </ProtectedAction>
-            </div>
-          )}
+      {/* COMPANY SELECTOR BAR */}
+      <div className="bg-white border border-gray-200/80 shadow-xs rounded-xl p-2.5 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="w-full sm:max-w-xs">
+          <CustomDropdown
+            value={selectedCompanyId}
+            onChange={(val) => setSelectedCompanyId(val)}
+            options={companyDropdownOptions}
+            searchable={true}
+            fullWidth={true}
+            icon={Building2}
+            placeholder="Select Logistics Company"
+          />
         </div>
 
-        {/* DYNAMIC RIDERS LIST BOX */}
-        <div className="p-4 bg-gray-50/70 rounded-xl border border-gray-200/90 space-y-3.5">
-          {/* Section Header with Action Buttons: Add Rider Box, Download Sample, Upload File, Delete Selected */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs sm:text-sm font-bold text-gray-900">
-                  Riders List for {activeCompany?.name || 'Selected Company'}
-                </span>
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-800">
-                  {currentRiders.length} {currentRiders.length === 1 ? 'Rider' : 'Riders'}
+        {activeCompany && (
+          <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap">
+            <div className="text-left sm:text-right">
+              <div className="flex items-center gap-2 sm:justify-end">
+                <span className="text-xs font-bold text-gray-900">{activeCompany.name}</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    activeCompany.status === 'Active'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-gray-200 text-gray-600'
+                  }`}
+                >
+                  {activeCompany.status}
                 </span>
               </div>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {companyFormat === 'shadowfax' &&
-                  'Configure Rider Name, Rider ID, Rate, Primary, and Clubbed values'}
-                {companyFormat === 'xpressbees' &&
-                  'Configure Rider Name, Rider ID, and Rate values'}
-                {companyFormat === 'valmo' &&
-                  'Configure combined Rider Name/Rider ID (e.g. 1018329-Sachin Sahu) and Rate values'}
-              </p>
+              <div className="text-[10px] text-gray-500 font-medium">
+                {companyFormat === 'shadowfax' && 'Shadowfax Format (Primary + Clubbed + Rate)'}
+                {companyFormat === 'xpressbees' && 'XpressBees Format (Delivered + Pickup + Rate)'}
+                {companyFormat === 'valmo' && 'Valmo Format (Combined Rider Name/ID + Rate)'}
+              </div>
             </div>
 
+            <ProtectedAction actionName="toggle company status">
+              <button
+                type="button"
+                onClick={() => toggleCompanyStatus(activeCompany.id || activeCompany._id)}
+                className="px-2.5 py-1 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-200 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer shadow-2xs"
+              >
+                {activeCompany.status === 'Active' ? 'Deactivate' : 'Activate'}
+              </button>
+            </ProtectedAction>
+          </div>
+        )}
+      </div>
+
+      {/* DYNAMIC RIDERS LIST & TABLE CONTAINER (FULL HEIGHT WITH SCROLLING BODY) */}
+      <div className="bg-white border border-gray-200/80 shadow-xs rounded-xl p-2.5 sm:p-3 flex-1 min-h-0 flex flex-col gap-2">
+        {/* Section Header with Action Buttons */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs sm:text-sm font-bold text-gray-900">
+              Riders List for {activeCompany?.name || 'Selected Company'}
+            </span>
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-800">
+              {currentRiders.length} {currentRiders.length === 1 ? 'Rider' : 'Riders'}
+            </span>
+          </div>
+
             <div className="flex items-center gap-2 flex-wrap self-start md:self-auto">
-              {/* Delete Selected Button (Visible when any rows are selected) */}
-              {selectedRiderIndices.length > 0 && (
-                <ProtectedAction actionName="delete selected riders">
-                  <button
-                    type="button"
-                    onClick={handleDeleteSelectedRiders}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer shadow-2xs animate-in fade-in"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Delete Selected ({selectedRiderIndices.length})</span>
-                  </button>
-                </ProtectedAction>
-              )}
+              {/* Search Rider Input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search riders..."
+                  value={riderSearchQuery}
+                  onChange={(e) => setRiderSearchQuery(e.target.value)}
+                  className="pl-7 pr-2.5 py-1 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 font-medium text-gray-900 w-36 sm:w-44 shadow-2xs"
+                />
+              </div>
 
               {/* Download Sample File Dropdown */}
               <SampleTemplateDropdown
@@ -830,175 +939,45 @@ export const SettingsHub = () => {
                 <Plus className="w-3.5 h-3.5 text-emerald-700" />
                 <span>Add Rider Box</span>
               </button>
-            </div>
-          </div>
 
-          {/* SELECT ALL TOOLBAR */}
-          {currentRiders.length > 0 && (
-            <div className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200/80 text-xs">
-              <label className="flex items-center gap-2 cursor-pointer select-none font-semibold text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={isAllSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = isSomeSelected;
-                  }}
-                  onChange={handleToggleSelectAll}
-                  className="w-4 h-4 rounded text-[#E53935] focus:ring-red-400 cursor-pointer accent-[#E53935]"
-                />
-                <span>Select All Riders ({currentRiders.length})</span>
-              </label>
-
-              {selectedRiderIndices.length > 0 && (
-                <span className="text-[11px] font-semibold text-[#E53935]">
-                  {selectedRiderIndices.length} of {currentRiders.length} selected
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* DYNAMIC RIDER INPUT ROWS */}
-          <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-            {currentRiders.length === 0 ? (
-              <div className="text-center py-6 text-xs text-gray-400 bg-white rounded-lg border border-dashed border-gray-200">
-                No riders configured yet. Click "+ Add Rider Box" or "Upload File" to add riders for this company.
-              </div>
-            ) : (
-              currentRiders.map((r, idx) => (
-                <div
-                  key={idx}
-                  className={`flex flex-wrap sm:flex-nowrap items-center gap-2 p-2.5 rounded-lg border transition-all ${
-                    selectedRiderIndices.includes(idx)
-                      ? 'bg-red-50/40 border-red-200 shadow-xs'
-                      : 'bg-white border-gray-200 shadow-2xs hover:border-gray-300'
-                  }`}
+              {/* Primary Save Rider Settings Button in Toolbar */}
+              <ProtectedAction actionName="save rider settings">
+                <button
+                  type="button"
+                  onClick={handleSaveRiders}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 bg-[#E53935] text-white hover:bg-[#D32F2F] shadow-sm hover:shadow cursor-pointer disabled:opacity-60"
+                  title="Save rider configuration to database"
                 >
-                  {/* Row Checkbox */}
-                  <input
-                    type="checkbox"
-                    checked={selectedRiderIndices.includes(idx)}
-                    onChange={() => handleToggleSelectRow(idx)}
-                    className="w-4 h-4 rounded text-[#E53935] focus:ring-red-400 cursor-pointer accent-[#E53935] shrink-0 ml-0.5"
-                  />
-
-                  <span className="text-[11px] font-mono font-bold text-gray-400 w-6 text-center shrink-0">
-                    #{idx + 1}
-                  </span>
-
-                  {/* SHADOWFAX FORMAT: Rider Name, Rider ID, Rate, Primary, Clubbed */}
-                  {companyFormat === 'shadowfax' && (
-                    <>
-                      <input
-                        type="text"
-                        placeholder="Rider Name (e.g. Sachin Sahu)"
-                        value={r.riderName}
-                        onChange={(e) => handleRiderChange(idx, 'riderName', e.target.value)}
-                        className="flex-1 min-w-[130px] px-2.5 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 bg-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Rider ID (e.g. 1018329)"
-                        value={r.riderId}
-                        onChange={(e) => handleRiderChange(idx, 'riderId', e.target.value)}
-                        className="w-28 sm:w-32 px-2.5 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 bg-white"
-                      />
-                      <div className="flex items-center gap-1 w-24">
-                        <span className="text-[10px] font-bold text-gray-400">Rate:</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={r.rate === 0 || r.rate === '0' ? '' : (r.rate ?? '')}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => handleRiderChange(idx, 'rate', e.target.value)}
-                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1 w-24">
-                        <span className="text-[10px] font-bold text-gray-400">Primary:</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={r.primary === 0 || r.primary === '0' ? '' : (r.primary ?? '')}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => handleRiderChange(idx, 'primary', e.target.value)}
-                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1 w-24">
-                        <span className="text-[10px] font-bold text-gray-400">Clubbed:</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={r.clubbed === 0 || r.clubbed === '0' ? '' : (r.clubbed ?? '')}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => handleRiderChange(idx, 'clubbed', e.target.value)}
-                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {/* XPRESSBEES & VALMO FORMAT: Single Rider Name/Rider ID combined field + Rate */}
-                  {(companyFormat === 'xpressbees' || companyFormat === 'valmo') && (
-                    <>
-                      <input
-                        type="text"
-                        placeholder="Rider Name/Rider ID (e.g. 1018329-Sachin Sahu)"
-                        value={
-                          r.riderCombined ||
-                          (r.riderId && r.riderName ? `${r.riderId}-${r.riderName}` : r.riderId || r.riderName || '')
-                        }
-                        onChange={(e) => handleRiderChange(idx, 'riderCombined', e.target.value)}
-                        className="flex-1 min-w-[200px] px-2.5 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 bg-white"
-                      />
-                      <div className="flex items-center gap-1 w-28">
-                        <span className="text-[10px] font-bold text-gray-400">Rate:</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={r.rate === 0 || r.rate === '0' ? '' : (r.rate ?? '')}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => handleRiderChange(idx, 'rate', e.target.value)}
-                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:border-[#E53935] focus:ring-1 focus:ring-red-100 outline-none font-medium text-gray-900 text-right bg-white"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveRiderRow(idx)}
-                    className="p-1.5 text-gray-400 hover:text-rose-600 rounded cursor-pointer transition-colors shrink-0"
-                    title="Remove Rider Box"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* BOTTOM SAVE BAR */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100">
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span className="font-semibold text-gray-800">{currentRiders.length}</span> rider boxes configured for{' '}
-            <span className="font-bold text-gray-900">{activeCompany?.name}</span>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : 'Save Rider Settings'}</span>
+                </button>
+              </ProtectedAction>
+            </div>
           </div>
 
-          <ProtectedAction actionName="save rider settings">
-            <button
-              type="button"
-              onClick={handleSaveRiders}
-              disabled={isSaving}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 bg-[#E53935] text-white hover:bg-[#D32F2F] shadow-sm hover:shadow cursor-pointer disabled:opacity-60"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? 'Saving Changes...' : 'Save Rider Settings'}</span>
-            </button>
-          </ProtectedAction>
+          {/* COMMON TABLE WITH BUILT-IN PAGINATION, SELECTION & ACTIONS */}
+          <CommonTable
+            columns={tableColumns}
+            data={displayedRiders}
+            onCellChange={handleCellChange}
+            onDeleteRow={handleDeleteRow}
+            canEdit={canEdit}
+            showFooterSummary={true}
+            footerSummaryData={footerSummaryData}
+            emptyMessage={`No riders configured for ${activeCompany?.name || 'Company'}. Click "+ Add Rider Box" or "Upload File" to start.`}
+            initialPageSize={10}
+            enableSelection={true}
+            selectedRowIds={selectedRiderIds}
+            onSelectRow={(id) => {
+              setSelectedRiderIds((prev) =>
+                prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+              );
+            }}
+            onSelectAll={(ids) => setSelectedRiderIds(ids)}
+            onBulkDelete={handleBulkDelete}
+          />
         </div>
-      </div>
 
       {/* VIEW ALL REGISTERED COMPANIES MODAL */}
       <Modal

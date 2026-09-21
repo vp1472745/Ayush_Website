@@ -61,6 +61,22 @@ const companySchema = new mongoose.Schema(
           type: Number,
           default: 0,
         },
+        primary: {
+          type: Number,
+          default: 0,
+        },
+        clubbed: {
+          type: Number,
+          default: 0,
+        },
+        delivered: {
+          type: Number,
+          default: 0,
+        },
+        pickup: {
+          type: Number,
+          default: 0,
+        },
         category: {
           type: String,
           default: '',

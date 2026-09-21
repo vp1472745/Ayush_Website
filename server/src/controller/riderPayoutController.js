@@ -129,6 +129,8 @@ function findMatchingRiderInCompany(companyRiders, inputId, inputName) {
           riderName: rName,
           rate: Number(rawR.rate !== undefined ? rawR.rate : (rawR.rateCard !== undefined ? rawR.rateCard : 0)) || 0,
           rateCard: Number(rawR.rateCard !== undefined ? rawR.rateCard : (rawR.rate !== undefined ? rawR.rate : 0)) || 0,
+          primary: Number(rawR.primary) || 0,
+          clubbed: Number(rawR.clubbed) || 0,
         };
       }
     }
@@ -148,6 +150,8 @@ function findMatchingRiderInCompany(companyRiders, inputId, inputName) {
           riderName: rName,
           rate: Number(rawR.rate !== undefined ? rawR.rate : (rawR.rateCard !== undefined ? rawR.rateCard : 0)) || 0,
           rateCard: Number(rawR.rateCard !== undefined ? rawR.rateCard : (rawR.rate !== undefined ? rawR.rate : 0)) || 0,
+          primary: Number(rawR.primary) || 0,
+          clubbed: Number(rawR.clubbed) || 0,
         };
       }
     }
@@ -160,6 +164,8 @@ function findMatchingRiderInCompany(companyRiders, inputId, inputName) {
         riderName: rName,
         rate: Number(rawR.rate !== undefined ? rawR.rate : (rawR.rateCard !== undefined ? rawR.rateCard : 0)) || 0,
         rateCard: Number(rawR.rateCard !== undefined ? rawR.rateCard : (rawR.rate !== undefined ? rawR.rate : 0)) || 0,
+        primary: Number(rawR.primary) || 0,
+        clubbed: Number(rawR.clubbed) || 0,
       };
     }
   }
