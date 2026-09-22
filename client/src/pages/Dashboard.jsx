@@ -350,13 +350,13 @@ export const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {/* Top Header */}
       <PageHeader
         title="Good Morning, Admin"
         subtitle="Rider Management Overview & Operations Summary"
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <DatePicker
               preset={dateFilter}
               onPresetChange={(p) => setDateFilter(p)}
@@ -372,7 +372,7 @@ export const Dashboard = () => {
       />
 
       {/* 8 Statistics StatCards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           title="Total Companies"
           value={companies.length}
@@ -457,7 +457,7 @@ export const Dashboard = () => {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
           {companies.map((company) => {
             const stats = calculateCompanyStats(company.id, riders);
             return (

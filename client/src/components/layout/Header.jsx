@@ -109,16 +109,16 @@ export const Header = () => {
   }, []);
 
   return (
-    <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-4 sm:px-6 flex items-center justify-between gap-4">
+    <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-4">
       {/* LEFT SIDE: Page Title + Company + Financial Year + Month Filter + Edit/Lock Toggle */}
-      <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto no-scrollbar py-0.5 min-w-0">
         {/* Page Title */}
-        <span className="text-base sm:text-lg font-bold text-gray-900 tracking-tight shrink-0">
+        <span className="text-sm sm:text-base font-bold text-gray-900 tracking-tight shrink-0 whitespace-nowrap">
           {getPageTitle()}
         </span>
 
         {/* Separator between page title and header controls */}
-        <span className="text-gray-300 hidden sm:inline">|</span>
+        <span className="text-gray-300 hidden md:inline shrink-0">|</span>
 
         {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Settings, Hub Expenses, Advanced & Profile */}
         {!['/hub-expenses', '/expenses', '/advanced', '/settings', '/profile'].includes(location.pathname) && (
@@ -129,7 +129,8 @@ export const Header = () => {
             icon={Building2}
             size="sm"
             searchable={true}
-            minWidth="150px"
+            minWidth="120px"
+            className="shrink-0"
           />
         )}
 
@@ -142,7 +143,8 @@ export const Header = () => {
             icon={Calendar}
             size="sm"
             searchable={false}
-            minWidth="130px"
+            minWidth="105px"
+            className="shrink-0"
           />
         )}
 
@@ -155,7 +157,8 @@ export const Header = () => {
             icon={Calendar}
             size="sm"
             searchable={true}
-            minWidth="135px"
+            minWidth="110px"
+            className="shrink-0"
           />
         )}
 
@@ -165,7 +168,7 @@ export const Header = () => {
           onClick={toggleLock}
           title={isLocked ? 'Currently locked. Click to enable Edit Mode' : 'Currently in Edit Mode. Click to lock'}
           className={`
-            flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 border cursor-pointer select-none shrink-0
+            flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 border cursor-pointer select-none shrink-0 whitespace-nowrap
             ${
               isLocked
                 ? 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 shadow-xs'
@@ -175,13 +178,15 @@ export const Header = () => {
         >
           {isLocked ? (
             <>
-              <Lock className="w-3.5 h-3.5 text-gray-600" />
-              <span>Locked Mode</span>
+              <Lock className="w-3.5 h-3.5 text-gray-600 shrink-0" />
+              <span className="hidden xl:inline">Locked Mode</span>
+              <span className="xl:hidden">Locked</span>
             </>
           ) : (
             <>
-              <Unlock className="w-3.5 h-3.5 text-[#E53935]" />
-              <span>Edit Mode</span>
+              <Unlock className="w-3.5 h-3.5 text-[#E53935] shrink-0" />
+              <span className="hidden xl:inline">Edit Mode</span>
+              <span className="xl:hidden">Edit</span>
             </>
           )}
         </button>
@@ -192,14 +197,14 @@ export const Header = () => {
           onClick={() => triggerRefresh(true)}
           disabled={isRefreshing}
           title={`Refresh ${getPageTitle()} data`}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-2xs cursor-pointer select-none shrink-0"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-2xs cursor-pointer select-none shrink-0 whitespace-nowrap"
         >
           <RotateCw
-            className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-500 ${
+            className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-500 shrink-0 ${
               isRefreshing ? 'animate-spin text-[#E53935]' : ''
             }`}
           />
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="hidden lg:inline">Refresh</span>
         </button>
       </div>
 

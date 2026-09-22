@@ -66,7 +66,7 @@ export const AppLayout = () => {
           )}
 
           {/* Page Body: Full-height flex child */}
-          <main className="flex-1 p-2 sm:p-2.5 w-full flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden">
+          <main className="flex-1 p-2 sm:p-2.5 w-full flex flex-col min-h-0 overflow-y-auto">
             <Outlet />
           </main>
         </div>

@@ -695,7 +695,7 @@ export const PaymentPayout = () => {
       {/* Main Table Card */}
       <div className="bg-white border border-gray-200/80 rounded-2xl shadow-xs overflow-hidden flex flex-col flex-1 min-h-0">
         {/* Toolbar */}
-        <div className="p-4 sm:p-5 border-b border-gray-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
+        <div className="p-3 sm:p-4 border-b border-gray-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
           {/* Search Box */}
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -712,7 +712,7 @@ export const PaymentPayout = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {/* Bulk Delete */}
             {selectedRowIds.length > 0 && (
               <button

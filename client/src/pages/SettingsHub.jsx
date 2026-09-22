@@ -871,7 +871,7 @@ export const SettingsHub = () => {
             </span>
           </div>
 
-            <div className="flex items-center gap-2 flex-wrap self-start md:self-auto">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap self-start md:self-auto">
               {/* Search Rider Input */}
               <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -880,7 +880,7 @@ export const SettingsHub = () => {
                   placeholder="Search riders..."
                   value={riderSearchQuery}
                   onChange={(e) => setRiderSearchQuery(e.target.value)}
-                  className="pl-7 pr-2.5 py-1 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 font-medium text-gray-900 w-36 sm:w-44 shadow-2xs"
+                  className="pl-7 pr-2.5 py-1 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 font-medium text-gray-900 w-32 sm:w-44 shadow-2xs"
                 />
               </div>
 
@@ -897,7 +897,7 @@ export const SettingsHub = () => {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload Excel or CSV file to import riders"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer shadow-2xs"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer shadow-2xs"
               >
                 <Upload className="w-3.5 h-3.5 text-indigo-700" />
                 <span>Upload File</span>
@@ -909,11 +909,11 @@ export const SettingsHub = () => {
                   type="button"
                   onClick={() => setIsExportMenuOpen((prev) => !prev)}
                   title="Export riders list to Excel or CSV"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] hover:bg-[#D1FAE5] transition-colors cursor-pointer shadow-2xs"
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] hover:bg-[#D1FAE5] transition-colors cursor-pointer shadow-2xs"
                 >
                   <Download className="w-3.5 h-3.5 text-[#059669]" />
                   <span>Export</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-[#059669]" />
+                  <ChevronDown className="w-3 h-3 text-[#059669]" />
                 </button>
 
                 {isExportMenuOpen && (
@@ -942,7 +942,7 @@ export const SettingsHub = () => {
               <button
                 type="button"
                 onClick={handleAddRiderRow}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shadow-2xs"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer shadow-2xs"
               >
                 <Plus className="w-3.5 h-3.5 text-emerald-700" />
                 <span>Add Rider Box</span>
@@ -954,7 +954,7 @@ export const SettingsHub = () => {
                   type="button"
                   onClick={handleSaveRiders}
                   disabled={isSaving}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 bg-[#E53935] text-white hover:bg-[#D32F2F] shadow-sm hover:shadow cursor-pointer disabled:opacity-60"
+                  className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 bg-[#E53935] text-white hover:bg-[#D32F2F] shadow-sm hover:shadow cursor-pointer disabled:opacity-60"
                   title="Save rider configuration to database"
                 >
                   <Save className="w-3.5 h-3.5" />
