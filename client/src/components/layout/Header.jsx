@@ -9,6 +9,7 @@ import {
   Calendar,
   User,
   RotateCw,
+  Menu,
 } from 'lucide-react';
 import { useLock } from '../../context/LockContext';
 import { useAuth } from '../../context/AuthContext';
@@ -22,7 +23,7 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-export const Header = () => {
+export const Header = ({ onOpenMobileSidebar }) => {
   const { isLocked, toggleLock } = useLock();
   const { currentUser, logout } = useAuth();
   const {
@@ -110,8 +111,19 @@ export const Header = () => {
 
   return (
     <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-4">
-      {/* LEFT SIDE: Page Title + Company + Financial Year + Month Filter + Edit/Lock Toggle */}
+      {/* LEFT SIDE: Hamburger (Mobile) + Page Title + Company + Financial Year + Month Filter + Edit/Lock Toggle */}
       <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto no-scrollbar py-0.5 min-w-0">
+        {/* Mobile Hamburger Menu Toggle Button */}
+        <button
+          type="button"
+          onClick={onOpenMobileSidebar}
+          className="md:hidden p-1.5 -ml-1 mr-0.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shrink-0 cursor-pointer"
+          aria-label="Open navigation menu"
+          title="Open Menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
         {/* Page Title */}
         <span className="text-sm sm:text-base font-bold text-gray-900 tracking-tight shrink-0 whitespace-nowrap">
           {getPageTitle()}

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { useLock } from '../../context/LockContext';
@@ -7,30 +7,50 @@ import { Lock, Unlock, X } from 'lucide-react';
 
 export const AppLayout = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const { isLocked, toggleLock } = useLock();
+  const location = useLocation();
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [location.pathname]);
+
+  // Close mobile sidebar on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isMobileOpen) {
+        setIsMobileOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileOpen]);
 
   return (
     <div className="h-screen w-screen bg-[#F7F8FA] font-sans antialiased flex overflow-hidden">
-      {/* Fixed Sidebar on Left */}
+      {/* Sidebar with Desktop & Mobile Drawer Support */}
       <Sidebar
         isCollapsed={isCollapsed}
         onToggleCollapse={() => setIsCollapsed((prev) => !prev)}
+        isMobileOpen={isMobileOpen}
+        onCloseMobile={() => setIsMobileOpen(false)}
       />
 
-      {/* Main Layout Container (Offset by sidebar width: w-64 or w-20) */}
+      {/* Main Layout Container (Offset on Desktop only by sidebar width: w-64 or w-20) */}
       <div
-        className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-200 ${
-          isCollapsed ? 'pl-20' : 'pl-64'
+        className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-200 pl-0 ${
+          isCollapsed ? 'md:pl-20' : 'md:pl-64'
         }`}
       >
         {/* Fixed Header directly above main content */}
         <div
-          className={`fixed top-0 right-0 z-30 transition-all duration-200 ${
-            isCollapsed ? 'left-20' : 'left-64'
+          className={`fixed top-0 right-0 left-0 z-30 transition-all duration-200 ${
+            isCollapsed ? 'md:left-20' : 'md:left-64'
           }`}
         >
-          <Header />
+          <Header onOpenMobileSidebar={() => setIsMobileOpen(true)} />
         </div>
 
         {/* Main Content Container: Fixed height on Desktop, Responsive on Mobile */}
@@ -74,3 +94,4 @@ export const AppLayout = () => {
     </div>
   );
 };
+
