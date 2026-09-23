@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronDown, X } from 'lucide-react';
 import { Calendar } from './Calendar';
 import { Button } from './Button';
@@ -16,7 +17,15 @@ export const DatePicker = ({
   className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState({
+    top: 0,
+    left: 0,
+    width: 290,
+  });
+
   const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popupRef = useRef(null);
 
   const [tempRange, setTempRange] = useState(() => {
     if (typeof value === 'object' && value !== null) {
@@ -27,19 +36,67 @@ export const DatePicker = ({
 
   const [selectedPreset, setSelectedPreset] = useState(preset || 'this_month');
 
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const popupWidth = Math.min(300, viewportWidth - 16);
+
+    let left = rect.left;
+    if (left + popupWidth > viewportWidth - 8) {
+      left = viewportWidth - popupWidth - 8;
+    }
+    if (left < 8) {
+      left = 8;
+    }
+
+    let top = rect.bottom + 6;
+    if (top + 360 > viewportHeight && rect.top > 360) {
+      top = Math.max(8, rect.top - 6);
+    }
+
+    setCoords({
+      top,
+      left,
+      width: popupWidth,
+    });
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target) &&
+        popupRef.current &&
+        !popupRef.current.contains(e.target)
+      ) {
         setIsOpen(false);
       }
     };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false);
+      }
+    };
+
     if (isOpen) {
+      updatePosition();
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
     }
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePosition]);
 
   const presets = [
     { key: 'today', label: 'Today' },
@@ -98,45 +155,56 @@ export const DatePicker = ({
   };
 
   const handleApplyCustom = () => {
-    if (tempRange.start && tempRange.end) {
-      if (onChange) onChange(tempRange);
-      if (onPresetChange) onPresetChange('custom');
-      setIsOpen(false);
-    }
+    if (onChange) onChange({ start: tempRange.start, end: tempRange.end });
+    if (onPresetChange) onPresetChange('custom');
+    setIsOpen(false);
   };
 
   const handleClear = (e) => {
     e.stopPropagation();
-    setTempRange({ start: '', end: '' });
-    setSelectedPreset('this_month');
-    if (onChange) onChange(isRange ? { start: '', end: '' } : '');
+    if (isRange) {
+      setTempRange({ start: '', end: '' });
+      if (onChange) onChange({ start: '', end: '' });
+    } else {
+      if (onChange) onChange('');
+    }
+    setSelectedPreset('custom');
+  };
+
+  const toggleOpen = () => {
+    if (disabled) return;
+    if (!isOpen) {
+      updatePosition();
+    }
+    setIsOpen(!isOpen);
   };
 
   // Display label
-  const displayText = (() => {
-    if (typeof value === 'string' && value) return value;
-    if (typeof value === 'object' && value?.start && value?.end) {
-      return `${value.start} — ${value.end}`;
+  let displayText = placeholder;
+  if (typeof value === 'string' && value) {
+    displayText = value;
+  } else if (typeof value === 'object' && value !== null) {
+    if (value.start && value.end) {
+      displayText = `${value.start} - ${value.end}`;
+    } else if (value.start) {
+      displayText = `${value.start} - ...`;
     }
-    const currentPresetObj = presets.find((p) => p.key === selectedPreset);
-    if (currentPresetObj && currentPresetObj.key !== 'custom') {
-      return currentPresetObj.label;
-    }
-    return placeholder;
-  })();
+  }
 
   return (
     <div className={`relative flex flex-col gap-1.5 ${className}`} ref={containerRef}>
       {label && <label className="text-xs font-semibold text-gray-700">{label}</label>}
 
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
         className={`
-          flex items-center justify-between gap-2.5 bg-white border rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium
-          transition-all duration-150 text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-[#E53935]/20 focus:border-[#E53935] cursor-pointer
-          ${error ? 'border-red-400' : 'border-[#E5E7EB]'}
+          flex items-center justify-between gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200
+          text-xs font-semibold shadow-2xs hover:border-gray-300 hover:bg-gray-50/90 transition-all outline-none cursor-pointer
+          ${isOpen ? 'ring-2 ring-[#E53935]/20 border-[#E53935]' : ''}
+          ${error ? 'border-red-400 focus:ring-red-200' : ''}
           ${disabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'text-gray-800'}
         `}
       >
@@ -158,73 +226,84 @@ export const DatePicker = ({
         </div>
       </button>
 
-      {isOpen && (
-        <div className="absolute top-full mt-1.5 right-0 z-50 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[280px] animate-fadeIn">
-          {/* Preset Buttons */}
-          <div className="p-2 border-b border-gray-100 flex flex-wrap gap-1 bg-gray-50/50">
-            {presets.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => handleSelectPreset(p.key)}
-                className={`
-                  px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer
-                  ${
-                    selectedPreset === p.key
-                      ? 'bg-[#E53935] text-white shadow-xs'
-                      : 'text-gray-600 hover:bg-gray-200/60'
-                  }
-                `}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Calendar Picker */}
-          <Calendar
-            selectedDate={typeof value === 'string' ? value : undefined}
-            onSelectDate={handleCalendarClick}
-            startDate={tempRange.start}
-            endDate={tempRange.end}
-            isRange={isRange}
-          />
-
-          {/* Footer Actions */}
-          <div className="p-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-gray-500">
-              {isRange
-                ? tempRange.start
-                  ? `${tempRange.start} to ${tempRange.end || '...'}`
-                  : 'Select range'
-                : 'Select single date'}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  const todayStr = new Date().toISOString().split('T')[0];
-                  if (onChange) onChange(isRange ? { start: todayStr, end: todayStr } : todayStr);
-                  setIsOpen(false);
-                }}
-              >
-                Today
-              </Button>
-              {isRange && (
-                <Button
-                  variant="primary"
-                  size="xs"
-                  disabled={!tempRange.start || !tempRange.end}
-                  onClick={handleApplyCustom}
+      {isOpen &&
+        createPortal(
+          <div
+            ref={popupRef}
+            className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            style={{
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              width: `${coords.width}px`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Preset Buttons */}
+            <div className="p-2 border-b border-gray-100 flex flex-wrap gap-1 bg-gray-50/50">
+              {presets.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => handleSelectPreset(p.key)}
+                  className={`
+                    px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer
+                    ${
+                      selectedPreset === p.key
+                        ? 'bg-[#E53935] text-white shadow-xs'
+                        : 'text-gray-600 hover:bg-gray-200/60'
+                    }
+                  `}
                 >
-                  Apply
-                </Button>
-              )}
+                  {p.label}
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
-      )}
+
+            {/* Calendar Picker */}
+            <Calendar
+              selectedDate={typeof value === 'string' ? value : undefined}
+              onSelectDate={handleCalendarClick}
+              startDate={tempRange.start}
+              endDate={tempRange.end}
+              isRange={isRange}
+            />
+
+            {/* Footer Actions */}
+            <div className="p-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-gray-500">
+                {isRange
+                  ? tempRange.start
+                    ? `${tempRange.start} to ${tempRange.end || '...'}`
+                    : 'Select range'
+                  : 'Select single date'}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    if (onChange) onChange(isRange ? { start: todayStr, end: todayStr } : todayStr);
+                    setIsOpen(false);
+                  }}
+                >
+                  Today
+                </Button>
+                {isRange && (
+                  <Button
+                    variant="primary"
+                    size="xs"
+                    disabled={!tempRange.start || !tempRange.end}
+                    onClick={handleApplyCustom}
+                  >
+                    Apply
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

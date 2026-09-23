@@ -9,6 +9,7 @@ import {
   Calendar,
   User,
   RotateCw,
+  Menu,
 } from 'lucide-react';
 import { useLock } from '../../context/LockContext';
 import { useAuth } from '../../context/AuthContext';
@@ -22,7 +23,7 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-export const Header = () => {
+export const Header = ({ onOpenMobileSidebar }) => {
   const { isLocked, toggleLock } = useLock();
   const { currentUser, logout } = useAuth();
   const {
@@ -100,18 +101,32 @@ export const Header = () => {
   };
 
   return (
-    <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-4 z-30">
-      {/* LEFT SIDE: Page Title + Company + Financial Year + Month Filter + Edit/Lock Toggle */}
-      <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto no-scrollbar py-0.5 min-w-0">
+    <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-2.5 sm:px-5 flex items-center justify-between gap-2 sm:gap-3 overflow-hidden">
+      {/* FIXED LEFT SIDE: Hamburger (Mobile) + Page Title (Never scrolls away) */}
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {/* Mobile Hamburger Menu Toggle Button */}
+        <button
+          type="button"
+          onClick={onOpenMobileSidebar}
+          className="md:hidden p-1.5 -ml-1 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shrink-0 cursor-pointer"
+          aria-label="Open navigation menu"
+          title="Open Menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
         {/* Page Title */}
         <span className="text-sm sm:text-base font-bold text-gray-900 tracking-tight shrink-0 whitespace-nowrap">
           {getPageTitle()}
         </span>
 
         {/* Separator between page title and header controls */}
-        <span className="text-gray-300 shrink-0">|</span>
+        <span className="text-gray-300 hidden sm:inline shrink-0">|</span>
+      </div>
 
-        {/* Global Company Filter Dropdown (All Franchise + Individual Companies) */}
+      {/* MIDDLE SCROLLABLE SECTION: Company + Financial Year + Month Filter + Edit/Lock Toggle + Refresh */}
+      <div className="flex-1 flex items-center gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto no-scrollbar py-0.5 min-w-0">
+        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Settings, Hub Expenses, Advanced & Profile */}
         {!['/hub-expenses', '/expenses', '/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedCompanyFilter || 'all'}
