@@ -40,46 +40,19 @@ export const Header = () => {
 
   // Filter only Active companies for dropdown
   const activeCompanies = useMemo(() => {
-    return companies.filter((c) => c.status === 'Active');
+    return (companies || []).filter((c) => c.status === 'Active');
   }, [companies]);
 
-  // Fallback to the first active company if selected company is no longer active or empty
-  useEffect(() => {
-    if (activeCompanies.length > 0) {
-      if (
-        !selectedCompanyFilter ||
-        selectedCompanyFilter === 'all' ||
-        !activeCompanies.some((c) => c.id === selectedCompanyFilter)
-      ) {
-        setSelectedCompanyFilter(activeCompanies[0].id || activeCompanies[0]._id);
-      }
-    }
-  }, [selectedCompanyFilter, activeCompanies, setSelectedCompanyFilter]);
-
-  // Page title lookup
-  const getPageTitle = () => {
-    const path = location.pathname;
-    if (path === '/dashboard') return 'Dashboard';
-    if (path === '/transactions') return 'Transactions';
-    if (path === '/payout-details') return 'Payout Details';
-    if (path === '/loss-details') return 'Loss Details';
-    if (path === '/hub-expenses' || path === '/expenses') return 'Hub Expenses';
-    if (path === '/settings') return 'Settings';
-    if (path === '/my-payment') return 'My Payment';
-    if (path === '/advanced') return 'Advanced';
-    if (path === '/profile') return 'Profile';
-    if (path.startsWith('/companies/')) return 'Company Details';
-    if (path === '/companies' || path === '/hub') return 'Companies';
-    return 'Portal';
-  };
-
-  // Company Options for CustomDropdown (Only active individual companies)
+  // Company Options for CustomDropdown (Includes 'All Franchise' + Active companies)
   const companyOptions = useMemo(() => {
-    return activeCompanies.map((c) => ({
-      value: c.id,
-      label: c.name,
-      icon: Building2,
-    }));
+    return [
+      { value: 'all', label: 'All Franchise', icon: Building2 },
+      ...activeCompanies.map((c) => ({
+        value: c.id || c._id,
+        label: c.name,
+        icon: Building2,
+      })),
+    ];
   }, [activeCompanies]);
 
   // Dynamic Financial Year Options (Formatted as 2024-2025, 2025-2026, 2026-2027, etc.)
@@ -108,8 +81,26 @@ export const Header = () => {
     }));
   }, []);
 
+  // Page title lookup
+  const getPageTitle = () => {
+    const path = location.pathname;
+    if (path === '/dashboard') return 'Dashboard';
+    if (path === '/my-payment' || path === '/franchise-payments' || path === '/payment-payout') return 'Franchise Payments';
+    if (path === '/payout-details' || path === '/rider-payout') return 'Rider Payout';
+    if (path === '/advanced' || path === '/rider-advances') return 'Rider Advances';
+    if (path === '/loss-details' || path === '/loss-and-recovery') return 'Loss & Recovery';
+    if (path === '/hub-expenses' || path === '/expenses') return 'Hub Expenses';
+    if (path === '/transactions' || path === '/transaction-ledger') return 'Transaction Ledger';
+    if (path === '/reports') return 'Reports';
+    if (path === '/settings') return 'Settings';
+    if (path === '/profile') return 'Profile';
+    if (path.startsWith('/companies/')) return 'Company Details';
+    if (path === '/companies' || path === '/hub') return 'Companies';
+    return 'Portal';
+  };
+
   return (
-    <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-4">
+    <header className="h-14 w-full bg-white border-b border-[#E5E7EB] px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-4 z-30">
       {/* LEFT SIDE: Page Title + Company + Financial Year + Month Filter + Edit/Lock Toggle */}
       <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto no-scrollbar py-0.5 min-w-0">
         {/* Page Title */}
@@ -118,23 +109,23 @@ export const Header = () => {
         </span>
 
         {/* Separator between page title and header controls */}
-        <span className="text-gray-300 hidden md:inline shrink-0">|</span>
+        <span className="text-gray-300 shrink-0">|</span>
 
-        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Settings, Hub Expenses, Advanced & Profile */}
+        {/* Global Company Filter Dropdown (All Franchise + Individual Companies) */}
         {!['/hub-expenses', '/expenses', '/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
-            value={selectedCompanyFilter}
+            value={selectedCompanyFilter || 'all'}
             onChange={setSelectedCompanyFilter}
             options={companyOptions}
             icon={Building2}
             size="sm"
             searchable={true}
-            minWidth="120px"
+            minWidth="130px"
             className="shrink-0"
           />
         )}
 
-        {/* Global Financial Year Dropdown - Hidden on Settings, Advanced & Profile */}
+        {/* Global Financial Year Dropdown */}
         {!['/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedFinancialYear}
@@ -143,12 +134,12 @@ export const Header = () => {
             icon={Calendar}
             size="sm"
             searchable={false}
-            minWidth="105px"
+            minWidth="110px"
             className="shrink-0"
           />
         )}
 
-        {/* Global Month Filter Dropdown - Hidden on Settings, Advanced & Profile */}
+        {/* Global Month Filter Dropdown */}
         {!['/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedMonthFilter}
@@ -157,7 +148,7 @@ export const Header = () => {
             icon={Calendar}
             size="sm"
             searchable={true}
-            minWidth="110px"
+            minWidth="115px"
             className="shrink-0"
           />
         )}

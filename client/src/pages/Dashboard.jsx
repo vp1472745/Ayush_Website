@@ -1,856 +1,1088 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2,
-  Users,
-  PackageCheck,
   IndianRupee,
+  Users,
+  Building2,
+  TrendingUp,
   TrendingDown,
-  Coins,
+  ArrowUpRight,
+  ArrowDownRight,
+  Receipt,
   Wallet,
+  AlertTriangle,
+  CheckCircle2,
   Clock,
-  Plus,
-  Edit2,
-  Trash2,
-  Eye,
+  ChevronRight,
+  CreditCard,
+  Layers,
   ArrowRight,
+  RefreshCw,
 } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
-import { useRiders } from '../context/RiderContext';
-import { useLock } from '../context/LockContext';
 import { useTabRefresh } from '../context/RefreshContext';
-import { formatCurrency, formatNumber, calculateCompanyStats } from '../utils/calculations';
-import {
-  PageHeader,
-  StatCard,
-  Card,
-  DataTable,
-  Button,
-  IconButton,
-  Badge,
-  DatePicker,
-  ProtectedAction,
-  Modal,
-  ConfirmationModal,
-  Input,
-  Select,
-} from '../components/common';
+import { useToast } from '../context/ToastContext';
+import { formatCurrency, formatNumber } from '../utils/calculations';
+import apiClient from '../api/apiClient';
+import { ENDPOINTS } from '../api/endpoints';
+import { Badge, Button } from '../components/common';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
-  const { companies, fetchCompanies } = useCompany();
-  const { riders, addRider, updateRider, deleteRider } = useRiders();
-  const { canEdit } = useLock();
+  const {
+    companies,
+    selectedCompanyFilter,
+    selectedMonthFilter,
+    selectedFinancialYear,
+    fetchCompanies,
+  } = useCompany();
+  const { toast } = useToast();
 
-  // Tab Refresh Hook
+  const [loading, setLoading] = useState(false);
+  const [performanceTab, setPerformanceTab] = useState('month'); // 'month' or 'fy'
+  const [lastUpdatedTime, setLastUpdatedTime] = useState('');
+
+  // Datasets from API
+  const [myPayments, setMyPayments] = useState([]);
+  const [riderPayouts, setRiderPayouts] = useState([]);
+  const [hubExpenses, setHubExpenses] = useState([]);
+  const [lossDetails, setLossDetails] = useState([]);
+  const [advances, setAdvances] = useState([]);
+
+  // Active companies
+  const activeCompanies = useMemo(() => {
+    return (companies || []).filter((c) => c.status === 'Active');
+  }, [companies]);
+
+  // Load all dashboard financial datasets
+  const loadDashboardData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = {};
+      if (selectedCompanyFilter && selectedCompanyFilter !== 'all') {
+        params.companyId = selectedCompanyFilter;
+      }
+      if (selectedMonthFilter) {
+        params.month = selectedMonthFilter;
+      }
+      if (selectedFinancialYear) {
+        params.financialYear = selectedFinancialYear;
+      }
+
+      const [
+        myPaymentsRes,
+        riderPayoutsRes,
+        hubExpensesRes,
+        lossDetailsRes,
+        advancesRes,
+      ] = await Promise.allSettled([
+        apiClient.get(ENDPOINTS.MY_PAYMENTS.GET_ALL, { params }),
+        apiClient.get(ENDPOINTS.RIDER_PAYOUTS.GET_ALL, { params }),
+        apiClient.get(ENDPOINTS.HUB_EXPENSES.GET_ALL, { params: { month: selectedMonthFilter } }),
+        apiClient.get(ENDPOINTS.LOSS_DETAILS.GET_ALL, { params }),
+        apiClient.get(ENDPOINTS.ADVANCES.GET_ALL, { params }),
+      ]);
+
+      if (myPaymentsRes.status === 'fulfilled') {
+        setMyPayments(myPaymentsRes.value.data?.data || myPaymentsRes.value.data || []);
+      }
+      if (riderPayoutsRes.status === 'fulfilled') {
+        setRiderPayouts(riderPayoutsRes.value.data?.data || riderPayoutsRes.value.data || []);
+      }
+      if (hubExpensesRes.status === 'fulfilled') {
+        setHubExpenses(hubExpensesRes.value.data?.data || hubExpensesRes.value.data || []);
+      }
+      if (lossDetailsRes.status === 'fulfilled') {
+        setLossDetails(lossDetailsRes.value.data?.data || lossDetailsRes.value.data || []);
+      }
+      if (advancesRes.status === 'fulfilled') {
+        setAdvances(advancesRes.value.data?.data || advancesRes.value.data || []);
+      }
+
+      const now = new Date();
+      setLastUpdatedTime(
+        `${now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+      );
+    } catch (err) {
+      console.error('Error loading dashboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
   useTabRefresh(() => {
+    loadDashboardData();
     if (typeof fetchCompanies === 'function') fetchCompanies();
   });
 
-  // Filters
-  const [dateFilter, setDateFilter] = useState('this_month');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCompany, setSelectedCompany] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState('all');
+  // -------------------------------------------------------------
+  // COMPUTED TOP METRICS
+  // -------------------------------------------------------------
+  // 1. Franchise Revenue Received (from MyPayment)
+  const totalRevenue = useMemo(() => {
+    return myPayments.reduce((sum, p) => sum + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
+  }, [myPayments]);
 
-  // Modals
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [selectedRider, setSelectedRider] = useState(null);
+  // 2. Rider Payout Cost (from RiderPayout)
+  const totalRiderPayout = useMemo(() => {
+    return riderPayouts.reduce((sum, r) => sum + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
+  }, [riderPayouts]);
 
-  // Rider Form State (No Phone)
-  const initialFormState = {
-    riderName: '',
-    riderId: '',
-    companyId: companies[0]?.id || '',
-    vehicleNumber: '',
-    deliveredPickupTotal: '',
-    primary: '',
-    clubbed: '',
-    rateCard: '14',
-    payout: '',
-    loss: '0',
-    advance: '0',
-    finalPayout: '',
-    paymentStatus: 'Pending',
-    status: 'Active',
-  };
-  const [formData, setFormData] = useState(initialFormState);
-  const [formErrors, setFormErrors] = useState({});
+  // 3. Hub Expenses (from HubExpense)
+  const totalHubExpenses = useMemo(() => {
+    return hubExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  }, [hubExpenses]);
 
-  // Computed Dashboard Aggregates
-  const totalDeliveries = useMemo(
-    () => riders.reduce((sum, r) => sum + (Number(r.deliveredPickupTotal) || 0), 0),
-    [riders]
-  );
-  const totalPayout = useMemo(
-    () => riders.reduce((sum, r) => sum + (Number(r.payout) || 0), 0),
-    [riders]
-  );
-  const totalLoss = useMemo(
-    () => riders.reduce((sum, r) => sum + (Number(r.loss) || 0), 0),
-    [riders]
-  );
-  const totalAdvance = useMemo(
-    () => riders.reduce((sum, r) => sum + (Number(r.advance) || 0), 0),
-    [riders]
-  );
-  const finalPayoutTotal = useMemo(
-    () => riders.reduce((sum, r) => sum + (Number(r.finalPayout) || 0), 0),
-    [riders]
-  );
-  const pendingPaymentsTotal = useMemo(
-    () =>
-      riders
-        .filter((r) => r.paymentStatus === 'Pending' || r.paymentStatus === 'Hold')
-        .reduce((sum, r) => sum + (Number(r.finalPayout) || 0), 0),
-    [riders]
-  );
+  // 4. Losses & Deductions
+  const totalLoss = useMemo(() => {
+    return lossDetails.reduce((sum, l) => sum + (Number(l.price) || 0), 0);
+  }, [lossDetails]);
 
-  // Filtered Riders for Excel-style table
-  const filteredRiders = useMemo(() => {
-    return riders.filter((r) => {
-      const matchSearch =
-        searchQuery === '' ||
-        r.riderName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.riderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (r.vehicleNumber && r.vehicleNumber.toLowerCase().includes(searchQuery.toLowerCase()));
+  const unrecoveredLoss = useMemo(() => {
+    return lossDetails
+      .filter((l) => l.status !== 'Recovered')
+      .reduce((sum, l) => sum + (Number(l.price) || 0), 0);
+  }, [lossDetails]);
 
-      const matchCompany =
-        selectedCompany === 'all' || r.companyId === selectedCompany;
+  // 5. Advances
+  const totalAdvanceGiven = useMemo(() => {
+    return advances.reduce((sum, a) => sum + (Number(a.advance) || 0), 0);
+  }, [advances]);
 
-      const matchStatus =
-        selectedStatus === 'all' || r.paymentStatus === selectedStatus;
+  const totalAdvanceRecovered = useMemo(() => {
+    return advances.reduce((sum, a) => sum + (Number(a.advanceCut) || 0), 0);
+  }, [advances]);
 
-      return matchSearch && matchCompany && matchStatus;
+  const totalAdvanceOutstanding = useMemo(() => {
+    return advances.reduce((sum, a) => sum + (Number(a.remainingAmount) || (Number(a.advance) - Number(a.advanceCut)) || 0), 0);
+  }, [advances]);
+
+  // 6. Net Business Profit
+  const netProfit = useMemo(() => {
+    return totalRevenue - (totalRiderPayout + totalHubExpenses + unrecoveredLoss);
+  }, [totalRevenue, totalRiderPayout, totalHubExpenses, unrecoveredLoss]);
+
+  // Total Money Out = Rider Payouts + Hub Expenses + Advance Given + Loss
+  const totalMoneyOut = useMemo(() => {
+    return totalRiderPayout + totalHubExpenses + totalAdvanceGiven + unrecoveredLoss;
+  }, [totalRiderPayout, totalHubExpenses, totalAdvanceGiven, unrecoveredLoss]);
+
+  // Rider counts & status
+  const riderStats = useMemo(() => {
+    const total = riderPayouts.length;
+    const paid = riderPayouts.filter((r) => r.paymentStatus === 'PAID').length;
+    const pending = total - paid;
+    const pendingAmount = riderPayouts
+      .filter((r) => r.paymentStatus !== 'PAID')
+      .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
+    return { total, paid, pending, pendingAmount };
+  }, [riderPayouts]);
+
+  // -------------------------------------------------------------
+  // MONEY IN BY COMPANY
+  // -------------------------------------------------------------
+  const moneyInByCompany = useMemo(() => {
+    return activeCompanies.map((comp) => {
+      const compId = comp.id || comp._id;
+      const amount = myPayments
+        .filter((p) => (p.companyId?._id || p.companyId?.id || p.companyId) === compId)
+        .reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
+      return {
+        id: compId,
+        name: comp.name,
+        amount,
+      };
     });
-  }, [riders, searchQuery, selectedCompany, selectedStatus]);
+  }, [activeCompanies, myPayments]);
 
-  // Form Handlers
-  const validateForm = () => {
-    const errors = {};
-    if (!formData.riderName.trim()) errors.riderName = 'Rider name is required';
-    if (!formData.companyId) errors.companyId = 'Please select a company';
-    if (!formData.deliveredPickupTotal && formData.deliveredPickupTotal !== 0)
-      errors.deliveredPickupTotal = 'Deliveries count is required';
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  // -------------------------------------------------------------
+  // FRANCHISE PERFORMANCE TABLE (Matrix by Company)
+  // -------------------------------------------------------------
+  const franchisePerformance = useMemo(() => {
+    const data = activeCompanies.map((comp) => {
+      const compId = comp.id || comp._id;
+      const income = myPayments
+        .filter((p) => (p.companyId?._id || p.companyId?.id || p.companyId) === compId)
+        .reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
+      const payout = riderPayouts
+        .filter((p) => (p.companyId?._id || p.companyId?.id || p.companyId) === compId)
+        .reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
+      const loss = lossDetails
+        .filter((l) => (l.companyId?._id || l.companyId?.id || l.companyId) === compId && l.status !== 'Recovered')
+        .reduce((s, l) => s + (Number(l.price) || 0), 0);
+      
+      // Direct + shared hub expense
+      const directExp = hubExpenses
+        .filter((e) => (e.companyId?._id || e.companyId?.id || e.companyId) === compId)
+        .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const sharedExp = hubExpenses
+        .filter((e) => !e.companyId)
+        .reduce((s, e) => s + (Number(e.amount) || 0), 0) / (activeCompanies.length || 1);
+      const hubExpense = directExp + sharedExp;
 
-  const handleOpenAdd = () => {
-    setFormData({
-      ...initialFormState,
-      companyId: companies[0]?.id || '',
+      const net = income - (payout + hubExpense + loss);
+
+      return {
+        companyId: compId,
+        name: comp.name,
+        income,
+        payout,
+        hubExpense,
+        loss,
+        netProfit: net,
+      };
     });
-    setFormErrors({});
-    setIsAddModalOpen(true);
-  };
 
-  const handleOpenEdit = (rider) => {
-    setSelectedRider(rider);
-    setFormData({
-      riderName: rider.riderName || '',
-      riderId: rider.riderId || '',
-      companyId: rider.companyId || '',
-      vehicleNumber: rider.vehicleNumber || '',
-      deliveredPickupTotal: rider.deliveredPickupTotal || '',
-      primary: rider.primary || '',
-      clubbed: rider.clubbed || '',
-      rateCard: rider.rateCard || '14',
-      payout: rider.payout || '',
-      loss: rider.loss || '0',
-      advance: rider.advance || '0',
-      finalPayout: rider.finalPayout || '',
-      paymentStatus: rider.paymentStatus || 'Pending',
-      status: rider.status || 'Active',
+    return data;
+  }, [activeCompanies, myPayments, riderPayouts, lossDetails, hubExpenses]);
+
+  // -------------------------------------------------------------
+  // EXPENSE BREAKDOWN CATEGORIES (Donut Chart & Legend)
+  // -------------------------------------------------------------
+  const expenseCategories = useMemo(() => {
+    const catMap = {
+      Rent: { name: 'Rent', color: '#3b82f6', amount: 0 },
+      Fuel: { name: 'Fuel / Travel', color: '#10b981', amount: 0 },
+      Electricity: { name: 'Electricity', color: '#f59e0b', amount: 0 },
+      Maintenance: { name: 'Maintenance', color: '#8b5cf6', amount: 0 },
+      Refreshments: { name: 'Tea & Snacks', color: '#06b6d4', amount: 0 },
+      Other: { name: 'Other Expenses', color: '#64748b', amount: 0 },
+    };
+
+    hubExpenses.forEach((e) => {
+      const text = (e.expenseName || '').toLowerCase();
+      const amt = Number(e.amount) || 0;
+      if (text.includes('rent') || text.includes('office')) {
+        catMap.Rent.amount += amt;
+      } else if (text.includes('fuel') || text.includes('travel') || text.includes('petrol')) {
+        catMap.Fuel.amount += amt;
+      } else if (text.includes('electric') || text.includes('bill') || text.includes('power')) {
+        catMap.Electricity.amount += amt;
+      } else if (text.includes('repair') || text.includes('maint')) {
+        catMap.Maintenance.amount += amt;
+      } else if (text.includes('tea') || text.includes('snack') || text.includes('food')) {
+        catMap.Refreshments.amount += amt;
+      } else {
+        catMap.Other.amount += amt;
+      }
     });
-    setFormErrors({});
-    setIsEditModalOpen(true);
-  };
 
-  const handleOpenView = (rider) => {
-    setSelectedRider(rider);
-    setIsViewModalOpen(true);
-  };
+    const total = Object.values(catMap).reduce((s, c) => s + c.amount, 0) || 1;
+    return Object.values(catMap).map((c) => ({
+      ...c,
+      percent: Math.round((c.amount / total) * 100),
+    }));
+  }, [hubExpenses]);
 
-  const handleOpenDelete = (rider) => {
-    setSelectedRider(rider);
-    setIsDeleteModalOpen(true);
-  };
+  // -------------------------------------------------------------
+  // RECENT TRANSACTIONS LEDGER (Real Feed)
+  // -------------------------------------------------------------
+  const recentTransactions = useMemo(() => {
+    const list = [];
+    myPayments.slice(0, 3).forEach((p) => {
+      list.push({
+        id: p._id,
+        date: p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : selectedMonthFilter,
+        type: 'Franchise Payment',
+        typeColor: 'text-green-700 bg-green-50',
+        franchise: p.companyId?.name || 'Franchise',
+        amount: Number(p.amount) || Number(p.finalPayable) || 0,
+        amountColor: 'text-green-600',
+        isPositive: true,
+      });
+    });
 
-  const handleAddSubmit = (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-    const success = addRider(formData);
-    if (success) {
-      setIsAddModalOpen(false);
-    }
-  };
+    riderPayouts.slice(0, 3).forEach((r) => {
+      list.push({
+        id: r._id,
+        date: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : selectedMonthFilter,
+        type: 'Rider Payout',
+        typeColor: 'text-red-700 bg-red-50',
+        franchise: r.riderName || 'Rider',
+        amount: Number(r.finalPayout) || Number(r.payout) || 0,
+        amountColor: 'text-red-600',
+        isPositive: false,
+      });
+    });
 
-  const handleEditSubmit = (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-    const success = updateRider(selectedRider.id, formData);
-    if (success) {
-      setIsEditModalOpen(false);
-    }
-  };
+    hubExpenses.slice(0, 2).forEach((e) => {
+      list.push({
+        id: e._id,
+        date: e.date || (e.createdAt ? new Date(e.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : selectedMonthFilter),
+        type: 'Hub Expense',
+        typeColor: 'text-amber-700 bg-amber-50',
+        franchise: e.expenseName || 'Hub',
+        amount: Number(e.amount) || 0,
+        amountColor: 'text-amber-600',
+        isPositive: false,
+      });
+    });
 
-  const handleDeleteConfirm = () => {
-    if (!selectedRider) return;
-    const success = deleteRider(selectedRider.id);
-    if (success) {
-      setIsDeleteModalOpen(false);
-      setSelectedRider(null);
-    }
-  };
+    return list.slice(0, 5);
+  }, [myPayments, riderPayouts, hubExpenses, selectedMonthFilter]);
 
-  // Rider Table Columns (No Phone)
-  const columns = [
-    {
-      key: 'riderName',
-      label: 'Rider Name',
-      sortable: true,
-      render: (val, row) => (
-        <div>
-          <div className="font-semibold text-gray-900">{val}</div>
-          <div className="text-[11px] text-gray-500">{row.vehicleNumber || 'No vehicle registered'}</div>
-        </div>
-      ),
-    },
-    {
-      key: 'riderId',
-      label: 'Rider ID',
-      sortable: true,
-      render: (val) => <span className="font-mono text-xs text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded">{val}</span>,
-    },
-    {
-      key: 'companyId',
-      label: 'Company',
-      sortable: true,
-      render: (val) => {
-        const comp = companies.find((c) => c.id === val);
-        return <span className="font-medium text-gray-700">{comp ? comp.name : 'Unknown'}</span>;
-      },
-    },
-    {
-      key: 'deliveredPickupTotal',
-      label: 'Total Pickups',
-      sortable: true,
-      align: 'center',
-      render: (val) => <span className="font-semibold text-gray-900">{val}</span>,
-    },
-    {
-      key: 'primary',
-      label: 'Primary',
-      sortable: true,
-      align: 'center',
-    },
-    {
-      key: 'clubbed',
-      label: 'Clubbed',
-      sortable: true,
-      align: 'center',
-    },
-    {
-      key: 'rateCard',
-      label: 'Rate (₹)',
-      sortable: true,
-      align: 'right',
-      render: (val) => `₹${val}`,
-    },
-    {
-      key: 'payout',
-      label: 'Payout',
-      sortable: true,
-      align: 'right',
-      render: (val) => <span className="font-medium text-gray-900">{formatCurrency(val)}</span>,
-    },
-    {
-      key: 'loss',
-      label: 'Loss',
-      sortable: true,
-      align: 'right',
-      render: (val) => (
-        <span className={Number(val) > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}>
-          {Number(val) > 0 ? `-₹${val}` : '₹0'}
-        </span>
-      ),
-    },
-    {
-      key: 'advance',
-      label: 'Advance',
-      sortable: true,
-      align: 'right',
-      render: (val) => (
-        <span className={Number(val) > 0 ? 'text-amber-700 font-medium' : 'text-gray-400'}>
-          {Number(val) > 0 ? `-₹${val}` : '₹0'}
-        </span>
-      ),
-    },
-    {
-      key: 'finalPayout',
-      label: 'Final Payout',
-      sortable: true,
-      align: 'right',
-      render: (val) => (
-        <span className="font-bold text-[#E53935]">{formatCurrency(val)}</span>
-      ),
-    },
-    {
-      key: 'paymentStatus',
-      label: 'Status',
-      sortable: true,
-      align: 'center',
-      render: (val) => <Badge variant={val} dot>{val}</Badge>,
-    },
-    {
-      key: 'actions',
-      label: 'Actions',
-      align: 'right',
-      render: (_, row) => (
-        <div className="flex items-center justify-end gap-1">
-          <IconButton
-            icon={Eye}
-            size="sm"
-            title="View details"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleOpenView(row);
-            }}
-          />
-          <ProtectedAction actionName="edit rider details">
-            <IconButton
-              icon={Edit2}
-              size="sm"
-              title="Edit rider"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenEdit(row);
-              }}
-            />
-          </ProtectedAction>
-          <ProtectedAction actionName="delete this rider">
-            <IconButton
-              icon={Trash2}
-              variant="danger"
-              size="sm"
-              title="Delete rider"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenDelete(row);
-              }}
-            />
-          </ProtectedAction>
-        </div>
-      ),
-    },
+  // Helper for max bar height calculation
+  const maxBarValue = useMemo(() => {
+    let max = 1000;
+    franchisePerformance.forEach((f) => {
+      if (f.income > max) max = f.income;
+      if (f.payout + f.hubExpense > max) max = f.payout + f.hubExpense;
+      if (f.netProfit > max) max = f.netProfit;
+    });
+    return max;
+  }, [franchisePerformance]);
+
+  const MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  const companyOptions = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Franchise', icon: Building2 },
+      ...activeCompanies.map((c) => ({
+        value: c.id || c._id,
+        label: c.name,
+        icon: Building2,
+      })),
+    ];
+  }, [activeCompanies]);
+
+  const financialYearOptions = useMemo(() => {
+    const baseYear = 2024;
+    const currentYr = new Date().getFullYear();
+    const endYear = Math.max(currentYr + 4, 2030);
+    const years = [];
+    for (let y = baseYear; y <= endYear; y++) {
+      const fyLabel = `${y}-${y + 1}`;
+      years.push({
+        value: fyLabel,
+        label: fyLabel,
+      });
+    }
+    return years;
+  }, []);
+
+  const monthOptions = useMemo(() => {
+    return MONTHS.map((m) => ({
+      value: m,
+      label: m,
+    }));
+  }, []);
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Top Header */}
-      <PageHeader
-        title="Good Morning, Admin"
-        subtitle="Rider Management Overview & Operations Summary"
-        actions={
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <DatePicker
-              preset={dateFilter}
-              onPresetChange={(p) => setDateFilter(p)}
-              isRange
-            />
-            <ProtectedAction actionName="add a new rider">
-              <Button variant="primary" icon={Plus} onClick={handleOpenAdd}>
-                Add Rider
-              </Button>
-            </ProtectedAction>
-          </div>
-        }
-      />
-
-      {/* 8 Statistics StatCards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard
-          title="Total Companies"
-          value={companies.length}
-          description="Active contracted logistics partners"
-          icon={Building2}
-          trend={{ value: '+1 new', isPositive: true, label: 'this quarter' }}
-        />
-        <StatCard
-          title="Total Riders"
-          value={riders.length}
-          description="Active delivery fleet personnel"
-          icon={Users}
-          trend={{ value: '+8.4%', isPositive: true, label: 'vs last month' }}
-        />
-        <StatCard
-          title="Total Deliveries"
-          value={formatNumber(totalDeliveries)}
-          description="Completed pickup & drops"
-          icon={PackageCheck}
-          trend={{ value: '+14.2%', isPositive: true, label: 'vs last week' }}
-        />
-        <StatCard
-          title="Total Payout"
-          value={formatCurrency(totalPayout)}
-          description="Gross rider compensation"
-          icon={IndianRupee}
-          trend={{ value: '+6.1%', isPositive: true, label: 'gross' }}
-        />
-        <StatCard
-          title="Total Loss"
-          value={formatCurrency(totalLoss)}
-          description="Penalties & transit damage"
-          icon={TrendingDown}
-          iconColor="text-[#DC2626]"
-          iconBg="bg-red-50"
-          trend={{ value: '-2.4%', isPositive: true, label: 'deductions' }}
-        />
-        <StatCard
-          title="Total Advance"
-          value={formatCurrency(totalAdvance)}
-          description="Disbursed fuel & emergency cash"
-          icon={Coins}
-          iconColor="text-amber-600"
-          iconBg="bg-amber-50"
-          trend={{ value: '₹0 pending', isNeutral: true }}
-        />
-        <StatCard
-          title="Final Payout"
-          value={formatCurrency(finalPayoutTotal)}
-          description="Net payable after deductions"
-          icon={Wallet}
-          iconColor="text-[#E53935]"
-          iconBg="bg-[#FFEBEE]"
-          trend={{ value: '₹12.4k avg/wk', isNeutral: true }}
-        />
-        <StatCard
-          title="Pending Payments"
-          value={formatCurrency(pendingPaymentsTotal)}
-          description="Pending & hold payment balance"
-          icon={Clock}
-          iconColor="text-amber-600"
-          iconBg="bg-amber-50"
-          trend={{ value: 'Action required', isPositive: false }}
-        />
-      </div>
-
-      {/* Company Overview Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-[#1F2937]">Company Overview</h2>
-            <p className="text-xs text-gray-500">Summary performance across partner fleets</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={ArrowRight}
-            iconPosition="right"
-            onClick={() => navigate('/companies')}
-          >
-            All Companies
-          </Button>
+    <div className="space-y-4 pb-8">
+      {/* 1. TOP HEADER & FILTER BAR */}
+      <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
+          <p className="text-xs text-gray-500 font-medium">Complete business overview at a glance</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-          {companies.map((company) => {
-            const stats = calculateCompanyStats(company.id, riders);
-            return (
-              <Card key={company.id} padding="normal" className="flex flex-col justify-between hover:border-gray-300">
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">{company.name}</h3>
-                      <span className="text-[11px] font-mono text-gray-500">{company.code}</span>
+        {/* Filters & Live Status */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Franchise Dropdown */}
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Franchise</span>
+            <select
+              value={selectedCompanyFilter || 'all'}
+              onChange={(e) => setSelectedCompanyFilter(e.target.value)}
+              className="bg-gray-50 hover:bg-gray-100/80 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-200 focus:border-[#E53935] cursor-pointer shadow-2xs"
+            >
+              {companyOptions.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Financial Year Dropdown */}
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Date Range / FY</span>
+            <select
+              value={selectedFinancialYear}
+              onChange={(e) => setSelectedFinancialYear(e.target.value)}
+              className="bg-gray-50 hover:bg-gray-100/80 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-200 focus:border-[#E53935] cursor-pointer shadow-2xs"
+            >
+              {financialYearOptions.map((y) => (
+                <option key={y.value} value={y.value}>
+                  FY {y.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Month Filter */}
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Payment Cycle / Month</span>
+            <select
+              value={selectedMonthFilter}
+              onChange={(e) => setSelectedMonthFilter(e.target.value)}
+              className="bg-gray-50 hover:bg-gray-100/80 border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-200 focus:border-[#E53935] cursor-pointer shadow-2xs"
+            >
+              {monthOptions.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Live Status */}
+          {lastUpdatedTime && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 mt-auto rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-emerald-800">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{lastUpdatedTime}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. TOP 4 EXECUTIVE KPI CARDS (Matching image position & color palette) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {/* Card 1: Franchise Revenue (Received) */}
+        <div className="bg-white border border-emerald-100 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <IndianRupee className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-gray-900">Franchise Revenue</div>
+                <div className="text-[10px] text-gray-500 font-medium">(Received)</div>
+              </div>
+            </div>
+          </div>
+          <div className="text-2xl font-extrabold text-gray-900 mt-3 tracking-tight">
+            {formatCurrency(totalRevenue)}
+          </div>
+          <div className="text-[11px] font-bold text-emerald-600 mt-1.5 flex items-center gap-1">
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>Active Contract Inflows</span>
+          </div>
+        </div>
+
+        {/* Card 2: Rider Payout (For Riders) */}
+        <div className="bg-white border border-rose-100 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-[#E53935] flex items-center justify-center">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-gray-900">Rider Payout</div>
+                <div className="text-[10px] text-gray-500 font-medium">(For Riders)</div>
+              </div>
+            </div>
+          </div>
+          <div className="text-2xl font-extrabold text-gray-900 mt-3 tracking-tight">
+            {formatCurrency(totalRiderPayout)}
+          </div>
+          <div className="text-[11px] font-bold text-rose-600 mt-1.5 flex items-center gap-1">
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>{riderPayouts.length} Riders Compensated</span>
+          </div>
+        </div>
+
+        {/* Card 3: Hub Expenses (Office + Operations) */}
+        <div className="bg-white border border-amber-100 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-gray-900">Hub Expenses</div>
+                <div className="text-[10px] text-gray-500 font-medium">(Office + Operations)</div>
+              </div>
+            </div>
+          </div>
+          <div className="text-2xl font-extrabold text-gray-900 mt-3 tracking-tight">
+            {formatCurrency(totalHubExpenses)}
+          </div>
+          <div className="text-[11px] font-bold text-amber-600 mt-1.5 flex items-center gap-1">
+            <ArrowDownRight className="w-3.5 h-3.5" />
+            <span>Rent, Power & Overheads</span>
+          </div>
+        </div>
+
+        {/* Card 4: Net Profit (Business Profit) */}
+        <div className="bg-white border border-blue-100 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-gray-900">Net Profit</div>
+                <div className="text-[10px] text-gray-500 font-medium">(Business Profit)</div>
+              </div>
+            </div>
+          </div>
+          <div className={`text-2xl font-extrabold mt-3 tracking-tight ${netProfit >= 0 ? 'text-blue-700' : 'text-[#E53935]'}`}>
+            {formatCurrency(netProfit)}
+          </div>
+          <div className="text-[11px] font-bold text-blue-600 mt-1.5 flex items-center gap-1">
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>{totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0}% Net Operating Margin</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. ROW 2: MONEY FLOW (LEFT) & FRANCHISE PERFORMANCE (RIGHT) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* LEFT BLOCK: Money Flow (This Month) */}
+        <div className="lg:col-span-5 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="text-xs font-bold text-gray-900 mb-3">
+              Money Flow <span className="text-gray-400 font-normal">({selectedMonthFilter})</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Money In */}
+              <div className="border border-emerald-100 rounded-xl p-3 bg-emerald-50/20">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </div>
+                  <span>Money In</span>
+                </div>
+                <div className="text-base font-extrabold text-emerald-800 mt-1">
+                  {formatCurrency(totalRevenue)}
+                </div>
+
+                <div className="mt-3 space-y-1.5 text-[11px] text-gray-600">
+                  {moneyInByCompany.map((c) => (
+                    <div key={c.id} className="flex justify-between">
+                      <span className="truncate">{c.name}</span>
+                      <strong className="text-gray-900">{formatCurrency(c.amount)}</strong>
                     </div>
-                    <Badge variant={company.status} size="sm">
-                      {company.status}
-                    </Badge>
+                  ))}
+                  {moneyInByCompany.length === 0 && (
+                    <div className="text-gray-400 italic">No payments yet</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Money Out */}
+              <div className="border border-rose-100 rounded-xl p-3 bg-rose-50/20">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                  <div className="w-5 h-5 rounded-full bg-rose-100 text-[#E53935] flex items-center justify-center">
+                    <ArrowDownRight className="w-3.5 h-3.5" />
+                  </div>
+                  <span>Money Out</span>
+                </div>
+                <div className="text-base font-extrabold text-[#E53935] mt-1">
+                  {formatCurrency(totalMoneyOut)}
+                </div>
+
+                <div className="mt-3 space-y-1.5 text-[11px] text-gray-600">
+                  <div className="flex justify-between">
+                    <span>Rider Payout</span>
+                    <strong className="text-gray-900">{formatCurrency(totalRiderPayout)}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Hub Expenses</span>
+                    <strong className="text-gray-900">{formatCurrency(totalHubExpenses)}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Rider Advances</span>
+                    <strong className="text-gray-900">{formatCurrency(totalAdvanceGiven)}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Loss / Claims</span>
+                    <strong className="text-gray-900">{formatCurrency(unrecoveredLoss)}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Totals Highlight Bar */}
+          <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-100 text-xs font-bold">
+            <div className="bg-emerald-50 rounded-lg py-2 px-3 flex justify-between text-emerald-900">
+              <span>Total In</span>
+              <span>{formatCurrency(totalRevenue)}</span>
+            </div>
+            <div className="bg-rose-50 rounded-lg py-2 px-3 flex justify-between text-rose-900">
+              <span>Total Out</span>
+              <span>{formatCurrency(totalMoneyOut)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT BLOCK: Franchise Performance (Profit & Loss Table) */}
+        <div className="lg:col-span-7 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-bold text-gray-900">
+              Franchise Performance <span className="text-gray-400 font-normal">(Profit & Loss)</span>
+            </div>
+            <div className="bg-gray-100 p-0.5 rounded-lg flex text-[10px] font-bold text-gray-600">
+              <button
+                type="button"
+                onClick={() => setPerformanceTab('month')}
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                  performanceTab === 'month' ? 'bg-blue-600 text-white shadow-2xs' : 'hover:text-gray-900'
+                }`}
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                onClick={() => setPerformanceTab('fy')}
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                  performanceTab === 'fy' ? 'bg-blue-600 text-white shadow-2xs' : 'hover:text-gray-900'
+                }`}
+              >
+                This FY
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500 font-bold">
+                  <th className="py-2 px-2.5">Particular</th>
+                  {franchisePerformance.map((f) => (
+                    <th key={f.companyId} className="py-2 px-2.5 text-right">{f.name}</th>
+                  ))}
+                  <th className="py-2 px-2.5 text-right text-gray-900">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <tr>
+                  <td className="py-2 px-2.5 font-medium text-gray-700">Franchise Income</td>
+                  {franchisePerformance.map((f) => (
+                    <td key={f.companyId} className="py-2 px-2.5 text-right font-medium text-gray-900">
+                      {formatCurrency(f.income)}
+                    </td>
+                  ))}
+                  <td className="py-2 px-2.5 text-right font-bold text-gray-900">
+                    {formatCurrency(totalRevenue)}
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-2 px-2.5 font-medium text-gray-700">Rider Payout</td>
+                  {franchisePerformance.map((f) => (
+                    <td key={f.companyId} className="py-2 px-2.5 text-right font-medium text-gray-600">
+                      {formatCurrency(f.payout)}
+                    </td>
+                  ))}
+                  <td className="py-2 px-2.5 text-right font-bold text-gray-800">
+                    {formatCurrency(totalRiderPayout)}
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-2 px-2.5 font-medium text-gray-700">Hub Expenses</td>
+                  {franchisePerformance.map((f) => (
+                    <td key={f.companyId} className="py-2 px-2.5 text-right font-medium text-gray-600">
+                      {formatCurrency(f.hubExpense)}
+                    </td>
+                  ))}
+                  <td className="py-2 px-2.5 text-right font-bold text-gray-800">
+                    {formatCurrency(totalHubExpenses)}
+                  </td>
+                </tr>
+
+                <tr>
+                  <td className="py-2 px-2.5 font-medium text-gray-700">Loss / Deduction</td>
+                  {franchisePerformance.map((f) => (
+                    <td key={f.companyId} className="py-2 px-2.5 text-right font-medium text-amber-700">
+                      {formatCurrency(f.loss)}
+                    </td>
+                  ))}
+                  <td className="py-2 px-2.5 text-right font-bold text-amber-700">
+                    {formatCurrency(unrecoveredLoss)}
+                  </td>
+                </tr>
+
+                <tr className="bg-emerald-50/60 font-bold border-t-2 border-emerald-200">
+                  <td className="py-2.5 px-2.5 text-emerald-900">Net Profit</td>
+                  {franchisePerformance.map((f) => (
+                    <td key={f.companyId} className={`py-2.5 px-2.5 text-right ${
+                      f.netProfit >= 0 ? 'text-emerald-700' : 'text-[#E53935]'
+                    }`}>
+                      {formatCurrency(f.netProfit)}
+                    </td>
+                  ))}
+                  <td className={`py-2.5 px-2.5 text-right ${
+                    netProfit >= 0 ? 'text-emerald-700 font-extrabold' : 'text-[#E53935] font-extrabold'
+                  }`}>
+                    {formatCurrency(netProfit)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. ROW 3: CHARTS & QUICK SUMMARY */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* 1. Bar Chart: Revenue vs Expense vs Profit */}
+        <div className="lg:col-span-5 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
+            <div className="text-xs font-bold text-gray-900">
+              Revenue vs Expense vs Profit <span className="text-gray-400 font-normal">(All Franchise)</span>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-bold">
+              <span className="flex items-center gap-1 text-emerald-600">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" /> Revenue
+              </span>
+              <span className="flex items-center gap-1 text-rose-600">
+                <span className="w-2 h-2 rounded-full bg-[#E53935]" /> Expense
+              </span>
+              <span className="flex items-center gap-1 text-blue-600">
+                <span className="w-2 h-2 rounded-full bg-blue-500" /> Profit
+              </span>
+            </div>
+          </div>
+
+          {/* Bar Chart Visualizer */}
+          <div className="h-44 flex items-end justify-around gap-2 pt-6 pb-2 border-b border-gray-100">
+            {franchisePerformance.map((f) => {
+              const revH = Math.max(12, Math.min(100, Math.round((f.income / (maxBarValue || 1)) * 100)));
+              const expH = Math.max(12, Math.min(100, Math.round(((f.payout + f.hubExpense) / (maxBarValue || 1)) * 100)));
+              const profH = Math.max(8, Math.min(100, Math.round((Math.max(0, f.netProfit) / (maxBarValue || 1)) * 100)));
+
+              return (
+                <div key={f.companyId} className="flex flex-col items-center gap-1 flex-1 max-w-[80px]">
+                  <div className="w-full flex items-end justify-center gap-1 h-32">
+                    {/* Revenue Bar */}
+                    <div
+                      title={`Revenue: ${formatCurrency(f.income)}`}
+                      style={{ height: `${revH}%` }}
+                      className="w-2.5 bg-emerald-500 rounded-t-sm transition-all duration-300 hover:opacity-80"
+                    />
+                    {/* Expense Bar */}
+                    <div
+                      title={`Expense: ${formatCurrency(f.payout + f.hubExpense)}`}
+                      style={{ height: `${expH}%` }}
+                      className="w-2.5 bg-[#E53935] rounded-t-sm transition-all duration-300 hover:opacity-80"
+                    />
+                    {/* Profit Bar */}
+                    <div
+                      title={`Profit: ${formatCurrency(f.netProfit)}`}
+                      style={{ height: `${profH}%` }}
+                      className="w-2.5 bg-blue-500 rounded-t-sm transition-all duration-300 hover:opacity-80"
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-600 truncate max-w-[65px] text-center">
+                    {f.name}
+                  </span>
+                </div>
+              );
+            })}
+
+            {/* Total Aggregate Column */}
+            <div className="flex flex-col items-center gap-1 flex-1 max-w-[80px]">
+              <div className="w-full flex items-end justify-center gap-1 h-32">
+                <div
+                  title={`Total Revenue: ${formatCurrency(totalRevenue)}`}
+                  style={{ height: '90%' }}
+                  className="w-2.5 bg-emerald-500 rounded-t-sm"
+                />
+                <div
+                  title={`Total Expense: ${formatCurrency(totalRiderPayout + totalHubExpenses)}`}
+                  style={{ height: '75%' }}
+                  className="w-2.5 bg-[#E53935] rounded-t-sm"
+                />
+                <div
+                  title={`Total Profit: ${formatCurrency(netProfit)}`}
+                  style={{ height: '45%' }}
+                  className="w-2.5 bg-blue-500 rounded-t-sm"
+                />
+              </div>
+              <span className="text-[10px] font-bold text-gray-900">Total</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Donut Chart: Expense Breakdown */}
+        <div className="lg:col-span-4 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+          <div className="text-xs font-bold text-gray-900 mb-2">
+            Expense Breakdown <span className="text-gray-400 font-normal">({selectedMonthFilter})</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            {/* Donut graphic */}
+            <div className="relative w-28 h-28 flex items-center justify-center shrink-0">
+              <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#f1f5f9" strokeWidth="4" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#3b82f6"
+                  strokeWidth="4"
+                  strokeDasharray="35 100"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="4"
+                  strokeDasharray="25 100"
+                  strokeDashoffset="-35"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="4"
+                  strokeDasharray="20 100"
+                  strokeDashoffset="-60"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#8b5cf6"
+                  strokeWidth="4"
+                  strokeDasharray="20 100"
+                  strokeDashoffset="-80"
+                />
+              </svg>
+              <div className="absolute text-center">
+                <div className="text-xs font-extrabold text-gray-900 leading-none">
+                  {formatCurrency(totalHubExpenses)}
+                </div>
+                <div className="text-[9px] text-gray-400 font-medium mt-0.5">Total Hub</div>
+              </div>
+            </div>
+
+            {/* Legend list */}
+            <div className="space-y-1 text-[11px] flex-1">
+              {expenseCategories.map((c) => (
+                <div key={c.name} className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-gray-600">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                    <span className="truncate">{c.name}</span>
+                  </span>
+                  <strong className="text-gray-900">{formatCurrency(c.amount)}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Quick Summary: Riders & Advances */}
+        <div className="lg:col-span-3 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="text-xs font-bold text-gray-900 mb-3">Quick Summary</div>
+
+            {/* Rider count box */}
+            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl p-2.5 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase">Total Riders</div>
+                  <div className="text-sm font-extrabold text-gray-900">{riderStats.total}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{riderStats.paid}</span>
+                </div>
+                <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{riderStats.pending}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Advances details */}
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between text-gray-600">
+                <span>Advance Given</span>
+                <strong className="text-gray-900">{formatCurrency(totalAdvanceGiven)}</strong>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Recovered</span>
+                <strong className="text-emerald-600">{formatCurrency(totalAdvanceRecovered)}</strong>
+              </div>
+              <div className="flex justify-between text-gray-600 border-t border-gray-100 pt-1.5 font-bold">
+                <span>Outstanding</span>
+                <strong className="text-amber-600">{formatCurrency(totalAdvanceOutstanding)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. ROW 4: FRANCHISE-WISE CARDS, RECENT TRANSACTIONS & ATTENTION REQUIRED */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Franchise-wise Summary Cards */}
+        <div className="lg:col-span-5 space-y-3">
+          <div className="text-xs font-bold text-gray-900">Franchise-wise Summary</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {franchisePerformance.map((f, idx) => {
+              const bgColors = [
+                'border-rose-200 bg-rose-50/20 text-rose-700',
+                'border-blue-200 bg-blue-50/20 text-blue-700',
+                'border-amber-200 bg-amber-50/20 text-amber-700',
+                'border-purple-200 bg-purple-50/20 text-purple-700',
+              ];
+              const tagClass = bgColors[idx % bgColors.length];
+
+              return (
+                <div key={f.companyId} className="bg-white border border-[#E5E7EB] rounded-xl p-3.5 shadow-2xs hover:shadow-xs transition-shadow">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-[10px] border ${tagClass}`}>
+                      {f.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="text-xs font-bold text-gray-900 truncate">{f.name}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs py-2 border-y border-gray-100 mb-4">
-                    <div>
-                      <span className="text-gray-400 block text-[11px]">Riders</span>
-                      <strong className="text-gray-800 text-sm font-semibold">{stats.totalRiders}</strong>
+                  <div className="space-y-1.5 text-[11px] text-gray-600">
+                    <div className="flex justify-between">
+                      <span>Revenue</span>
+                      <strong className="text-gray-900">{formatCurrency(f.income)}</strong>
                     </div>
-                    <div>
-                      <span className="text-gray-400 block text-[11px]">Deliveries</span>
-                      <strong className="text-gray-800 text-sm font-semibold">{formatNumber(stats.totalDeliveries)}</strong>
+                    <div className="flex justify-between">
+                      <span>Expense</span>
+                      <strong className="text-gray-700">{formatCurrency(f.payout + f.hubExpense)}</strong>
                     </div>
-                    <div>
-                      <span className="text-gray-400 block text-[11px]">Payout</span>
-                      <strong className="text-gray-800 text-sm font-semibold">{formatCurrency(stats.totalPayout)}</strong>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 block text-[11px]">Pending</span>
-                      <strong className="text-amber-700 text-sm font-semibold">{formatCurrency(stats.pendingPayments)}</strong>
+                    <div className="flex justify-between border-t border-gray-100 pt-1 font-bold">
+                      <span>Profit</span>
+                      <strong className={f.netProfit >= 0 ? 'text-emerald-600' : 'text-[#E53935]'}>
+                        {formatCurrency(f.netProfit)}
+                      </strong>
                     </div>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
 
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  fullWidth
-                  icon={ArrowRight}
-                  iconPosition="right"
-                  onClick={() => navigate(`/companies/${company.id}`)}
-                >
-                  View Details
-                </Button>
-              </Card>
-            );
-          })}
+        {/* Recent Transactions Table */}
+        <div className="lg:col-span-4 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-bold text-gray-900">Recent Transactions</div>
+            <button
+              type="button"
+              onClick={() => navigate('/transactions')}
+              className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+            >
+              View All <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[11px]">
+              <thead>
+                <tr className="text-gray-400 font-bold border-b border-gray-100">
+                  <th className="pb-1.5">Date</th>
+                  <th className="pb-1.5">Type</th>
+                  <th className="pb-1.5">Party</th>
+                  <th className="pb-1.5 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentTransactions.map((t, idx) => (
+                  <tr key={t.id || idx} className="hover:bg-gray-50/50">
+                    <td className="py-2 text-gray-500">{t.date}</td>
+                    <td className="py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${t.typeColor}`}>
+                        {t.type}
+                      </span>
+                    </td>
+                    <td className="py-2 font-medium text-gray-800 truncate max-w-[80px]">{t.franchise}</td>
+                    <td className={`py-2 text-right font-bold ${t.amountColor}`}>
+                      {t.isPositive ? '+' : '-'}{formatCurrency(t.amount)}
+                    </td>
+                  </tr>
+                ))}
+                {recentTransactions.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-gray-400 italic">
+                      No recent transactions
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Attention Required Alerts */}
+        <div className="lg:col-span-3 bg-white border border-rose-100 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
+                <AlertTriangle className="w-4 h-4 text-[#E53935]" />
+                <span>Attention Required</span>
+              </div>
+              <span className="w-5 h-5 rounded-full bg-[#E53935] text-white flex items-center justify-center text-[10px] font-bold">
+                {((riderStats.pending > 0 ? 1 : 0) + (totalAdvanceOutstanding > 0 ? 1 : 0) + (unrecoveredLoss > 0 ? 1 : 0)) || 0}
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {/* Alert 1: Pending Rider Payments */}
+              <div
+                onClick={() => navigate('/payout-details')}
+                className="p-2.5 rounded-xl bg-rose-50/60 border border-rose-100 hover:bg-rose-100/50 transition-colors cursor-pointer flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="w-3.5 h-3.5 text-[#E53935]" />
+                  <div>
+                    <div className="font-bold text-gray-900 text-[11px]">{riderStats.pending} Rider Payouts Pending</div>
+                  </div>
+                </div>
+                <strong className="text-[#E53935] text-[11px]">{formatCurrency(riderStats.pendingAmount)}</strong>
+              </div>
+
+              {/* Alert 2: Outstanding Advances */}
+              <div
+                onClick={() => navigate('/advanced')}
+                className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-100 hover:bg-amber-100/50 transition-colors cursor-pointer flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-3.5 h-3.5 text-amber-600" />
+                  <div>
+                    <div className="font-bold text-gray-900 text-[11px]">Advance Outstanding</div>
+                  </div>
+                </div>
+                <strong className="text-amber-700 text-[11px]">{formatCurrency(totalAdvanceOutstanding)}</strong>
+              </div>
+
+              {/* Alert 3: Loss Recovery Pending */}
+              <div
+                onClick={() => navigate('/loss-details')}
+                className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 hover:bg-gray-100/60 transition-colors cursor-pointer flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-gray-600" />
+                  <div>
+                    <div className="font-bold text-gray-900 text-[11px]">Loss Recovery Pending</div>
+                  </div>
+                </div>
+                <strong className="text-gray-900 text-[11px]">{formatCurrency(unrecoveredLoss)}</strong>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Excel-Style Rider Management Table */}
-      <Card
-        title="Rider Management"
-        subtitle="Manage fleet personnel, delivery logs, rate cards, and calculated payouts"
-        action={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <ProtectedAction actionName="add a new rider">
-              <Button variant="primary" size="sm" icon={Plus} onClick={handleOpenAdd}>
-                + Add Rider
-              </Button>
-            </ProtectedAction>
-          </div>
-        }
-      >
-        <div className="mb-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="w-full sm:w-72">
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search rider name, ID, bike..."
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-            <div className="w-40">
-              <Select
-                value={selectedCompany}
-                onChange={(e) => setSelectedCompany(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Companies' },
-                  ...companies.map((c) => ({ value: c.id, label: c.name })),
-                ]}
-              />
-            </div>
-
-            <div className="w-36">
-              <Select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                options={[
-                  { value: 'all', label: 'All Statuses' },
-                  { value: 'Paid', label: 'Paid' },
-                  { value: 'Pending', label: 'Pending' },
-                  { value: 'Hold', label: 'Hold' },
-                ]}
-              />
-            </div>
-          </div>
-        </div>
-
-        <DataTable
-          columns={columns}
-          data={filteredRiders}
-          emptyTitle="No riders matching your filters"
-          emptyDescription="Try clearing your search query or company filters to view fleet riders."
-          emptyActionLabel="Reset Filters"
-          onEmptyAction={() => {
-            setSearchQuery('');
-            setSelectedCompany('all');
-            setSelectedStatus('all');
-          }}
-        />
-      </Card>
-
-      {/* ADD RIDER MODAL (NO PHONE FIELD) */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title="Add New Rider"
-        subtitle="Register fleet rider with rate card and initial delivery logs"
-        confirmLabel="Save Rider"
-        onConfirm={handleAddSubmit}
-      >
-        <form onSubmit={handleAddSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Rider Full Name"
-              value={formData.riderName}
-              onChange={(e) => setFormData({ ...formData, riderName: e.target.value })}
-              placeholder="e.g. Shubham Wasnik"
-              error={formErrors.riderName}
-              required
-            />
-            <Input
-              label="Rider ID (Optional)"
-              value={formData.riderId}
-              onChange={(e) => setFormData({ ...formData, riderId: e.target.value })}
-              placeholder="Auto-generated if empty"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select
-              label="Assigned Company"
-              value={formData.companyId}
-              onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
-              options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              error={formErrors.companyId}
-              required
-            />
-            <Input
-              label="Vehicle Registration No"
-              value={formData.vehicleNumber}
-              onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
-              placeholder="e.g. MH 02 CK 9942"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Total Pickups/Deliveries"
-              type="number"
-              value={formData.deliveredPickupTotal}
-              onChange={(e) => setFormData({ ...formData, deliveredPickupTotal: e.target.value })}
-              placeholder="e.g. 20"
-              error={formErrors.deliveredPickupTotal}
-              required
-            />
-            <Input
-              label="Primary"
-              type="number"
-              value={formData.primary}
-              onChange={(e) => setFormData({ ...formData, primary: e.target.value })}
-              placeholder="e.g. 15"
-            />
-            <Input
-              label="Clubbed"
-              type="number"
-              value={formData.clubbed}
-              onChange={(e) => setFormData({ ...formData, clubbed: e.target.value })}
-              placeholder="e.g. 5"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Rate Card (₹/delivery)"
-              type="number"
-              value={formData.rateCard}
-              onChange={(e) => setFormData({ ...formData, rateCard: e.target.value })}
-              placeholder="12"
-            />
-            <Input
-              label="Loss / Penalties (₹)"
-              type="number"
-              value={formData.loss}
-              onChange={(e) => setFormData({ ...formData, loss: e.target.value })}
-              placeholder="0"
-            />
-            <Input
-              label="Advance Cash (₹)"
-              type="number"
-              value={formData.advance}
-              onChange={(e) => setFormData({ ...formData, advance: e.target.value })}
-              placeholder="0"
-            />
-          </div>
-
-          <Select
-            label="Payment Status"
-            value={formData.paymentStatus}
-            onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value })}
-            options={[
-              { value: 'Paid', label: 'Paid' },
-              { value: 'Pending', label: 'Pending' },
-              { value: 'Hold', label: 'Hold' },
-            ]}
-          />
-        </form>
-      </Modal>
-
-      {/* EDIT RIDER MODAL */}
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        title="Edit Rider Details"
-        subtitle={`Updating record for ${selectedRider?.riderName}`}
-        confirmLabel="Update Rider"
-        onConfirm={handleEditSubmit}
-      >
-        <form onSubmit={handleEditSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Rider Full Name"
-              value={formData.riderName}
-              onChange={(e) => setFormData({ ...formData, riderName: e.target.value })}
-              error={formErrors.riderName}
-              required
-            />
-            <Input
-              label="Rider ID"
-              value={formData.riderId}
-              onChange={(e) => setFormData({ ...formData, riderId: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select
-              label="Company"
-              value={formData.companyId}
-              onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
-              options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              required
-            />
-            <Input
-              label="Vehicle No"
-              value={formData.vehicleNumber}
-              onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Total Pickups"
-              type="number"
-              value={formData.deliveredPickupTotal}
-              onChange={(e) => setFormData({ ...formData, deliveredPickupTotal: e.target.value })}
-              required
-            />
-            <Input
-              label="Primary"
-              type="number"
-              value={formData.primary}
-              onChange={(e) => setFormData({ ...formData, primary: e.target.value })}
-            />
-            <Input
-              label="Clubbed"
-              type="number"
-              value={formData.clubbed}
-              onChange={(e) => setFormData({ ...formData, clubbed: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Rate Card (₹)"
-              type="number"
-              value={formData.rateCard}
-              onChange={(e) => setFormData({ ...formData, rateCard: e.target.value })}
-            />
-            <Input
-              label="Loss (₹)"
-              type="number"
-              value={formData.loss}
-              onChange={(e) => setFormData({ ...formData, loss: e.target.value })}
-            />
-            <Input
-              label="Advance (₹)"
-              type="number"
-              value={formData.advance}
-              onChange={(e) => setFormData({ ...formData, advance: e.target.value })}
-            />
-          </div>
-
-          <Select
-            label="Payment Status"
-            value={formData.paymentStatus}
-            onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value })}
-            options={[
-              { value: 'Paid', label: 'Paid' },
-              { value: 'Pending', label: 'Pending' },
-              { value: 'Hold', label: 'Hold' },
-            ]}
-          />
-        </form>
-      </Modal>
-
-      {/* VIEW RIDER MODAL */}
-      <Modal
-        isOpen={isViewModalOpen}
-        onClose={() => setIsViewModalOpen(false)}
-        title="Rider Profile"
-        subtitle={selectedRider?.riderName}
-        maxWidth="max-w-xl"
-        cancelLabel="Close"
-      >
-        {selectedRider && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-              <div>
-                <h4 className="text-base font-bold text-gray-900">{selectedRider.riderName}</h4>
-                <p className="text-xs text-gray-500 font-mono mt-0.5">ID: {selectedRider.riderId}</p>
-              </div>
-              <Badge variant={selectedRider.paymentStatus} dot>
-                {selectedRider.paymentStatus}
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 bg-white border border-gray-200 rounded-lg">
-                <span className="text-gray-400 block text-[11px]">Company</span>
-                <span className="font-semibold text-gray-800">
-                  {companies.find((c) => c.id === selectedRider.companyId)?.name || 'N/A'}
-                </span>
-              </div>
-              <div className="p-3 bg-white border border-gray-200 rounded-lg">
-                <span className="text-gray-400 block text-[11px]">Vehicle No</span>
-                <span className="font-semibold text-gray-800">{selectedRider.vehicleNumber || 'N/A'}</span>
-              </div>
-              <div className="p-3 bg-white border border-gray-200 rounded-lg">
-                <span className="text-gray-400 block text-[11px]">Total Deliveries</span>
-                <span className="font-bold text-gray-900 text-sm">{selectedRider.deliveredPickupTotal}</span>
-              </div>
-              <div className="p-3 bg-white border border-gray-200 rounded-lg">
-                <span className="text-gray-400 block text-[11px]">Gross Payout</span>
-                <span className="font-semibold text-gray-800">{formatCurrency(selectedRider.payout)}</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-red-50/50 border border-red-100 rounded-xl space-y-2">
-              <div className="text-xs font-bold text-gray-900">Payout Breakdown</div>
-              <div className="flex justify-between text-xs text-gray-600">
-                <span>Gross Payout:</span>
-                <span>{formatCurrency(selectedRider.payout)}</span>
-              </div>
-              <div className="flex justify-between text-xs text-red-600">
-                <span>Loss Deduction:</span>
-                <span>-₹{selectedRider.loss}</span>
-              </div>
-              <div className="flex justify-between text-xs text-amber-700">
-                <span>Advance Deduction:</span>
-                <span>-₹{selectedRider.advance}</span>
-              </div>
-              <div className="pt-2 border-t border-red-200 flex justify-between text-sm font-bold text-[#E53935]">
-                <span>Final Net Payout:</span>
-                <span>{formatCurrency(selectedRider.finalPayout)}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* CONFIRM DELETE MODAL */}
-      <ConfirmationModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Rider Record"
-        message={`Are you sure you want to remove rider "${selectedRider?.riderName}"?`}
-        confirmLabel="Delete Rider"
-        variant="danger"
-      />
     </div>
   );
 };
