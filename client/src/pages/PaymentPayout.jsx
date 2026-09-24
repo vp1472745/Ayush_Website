@@ -176,7 +176,7 @@ const CycleDropdown = ({ value, onChange, options, disabled }) => {
 };
 
 export const PaymentPayout = () => {
-  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear, fetchCompanies } = useCompany();
+  const { companies, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear, selectedCycleFilter, fetchCompanies } = useCompany();
   const { canEdit, notifyLocked } = useLock();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
@@ -329,9 +329,11 @@ export const PaymentPayout = () => {
     setSelectedRowIds([]);
   }, [fetchPayments]);
 
-  // Filtered rows for search
+  // Filtered rows for cycle and search
   const displayedRows = useMemo(() => {
     return rows.filter((r) => {
+      const matchCycle = !selectedCycleFilter || selectedCycleFilter === 'all' || r.cycle === selectedCycleFilter;
+      if (!matchCycle) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (
@@ -339,10 +341,11 @@ export const PaymentPayout = () => {
         r.cycle?.toLowerCase().includes(q) ||
         r.amount?.toString().includes(q) ||
         r.loss?.toString().includes(q) ||
-        r.finalPayable?.toString().includes(q)
+        r.finalPayable?.toString().includes(q) ||
+        r.remarks?.toLowerCase().includes(q)
       );
     });
-  }, [rows, searchQuery]);
+  }, [rows, searchQuery, selectedCycleFilter]);
 
   // Totals calculation
   const totals = useMemo(() => {

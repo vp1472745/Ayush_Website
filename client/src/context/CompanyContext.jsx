@@ -26,6 +26,7 @@ export const CompanyProvider = ({ children }) => {
   const defaultFY = `${defaultFYStart}-${defaultFYStart + 1}`;
 
   const [selectedFinancialYear, setSelectedFinancialYear] = useState(defaultFY);
+  const [selectedCycleFilter, setSelectedCycleFilter] = useState('all');
 
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
@@ -138,6 +139,8 @@ export const CompanyProvider = ({ children }) => {
         setSelectedMonthFilter,
         selectedFinancialYear,
         setSelectedFinancialYear,
+        selectedCycleFilter,
+        setSelectedCycleFilter,
         fetchCompanies,
         addCompany,
         updateCompany,

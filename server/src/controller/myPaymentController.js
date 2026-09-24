@@ -6,7 +6,7 @@ import Company from '../modals/Company.js';
 // @access  Private
 export const getMyPayments = async (req, res, next) => {
   try {
-    const { companyId, month, financialYear } = req.query;
+    const { companyId, month, financialYear, cycle } = req.query;
     const filter = {};
 
     if (companyId && companyId !== 'all') {
@@ -17,6 +17,9 @@ export const getMyPayments = async (req, res, next) => {
     }
     if (financialYear && financialYear !== 'all') {
       filter.financialYear = financialYear;
+    }
+    if (cycle && cycle !== 'all') {
+      filter.cycle = cycle;
     }
 
     const payments = await MyPayment.find(filter)

@@ -100,7 +100,7 @@ app.use('/api', apiRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 8050;
+const PORT = process.env.PORT || 4500;
 const server = app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 [Server Running]: http://localhost:${PORT}`);

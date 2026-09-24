@@ -15,6 +15,7 @@ import { Profile } from '../pages/Profile';
 import { Companies } from '../pages/Companies';
 import { CompanyDetails } from '../pages/CompanyDetails';
 import { Reports } from '../pages/Reports';
+import { Notepad } from '../pages/Notepad';
 
 // Protected route wrapper
 const ProtectedRoute = ({ children }) => {
@@ -87,6 +88,9 @@ export const AppRoutes = () => {
 
         {/* Reports & Financial Analytics */}
         <Route path="reports" element={<Reports />} />
+
+        {/* Smart Advanced Notepad */}
+        <Route path="notepad" element={<Notepad />} />
 
         {/* Settings & Profile */}
         <Route path="settings" element={<SettingsHub />} />

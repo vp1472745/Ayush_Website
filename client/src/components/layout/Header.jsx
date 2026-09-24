@@ -7,6 +7,7 @@ import {
   Settings,
   Building2,
   Calendar,
+  Clock,
   User,
   RotateCw,
   Menu,
@@ -34,6 +35,8 @@ export const Header = ({ onOpenMobileSidebar }) => {
     setSelectedMonthFilter,
     selectedFinancialYear,
     setSelectedFinancialYear,
+    selectedCycleFilter,
+    setSelectedCycleFilter,
   } = useCompany();
   const { isRefreshing, triggerRefresh } = useRefresh();
   const navigate = useNavigate();
@@ -82,6 +85,56 @@ export const Header = ({ onOpenMobileSidebar }) => {
     }));
   }, []);
 
+  // Dynamic Payment Cycle / Week Options based on selected company
+  const cycleOptions = useMemo(() => {
+    const selectedComp = activeCompanies.find((c) => (c.id || c._id) === selectedCompanyFilter);
+
+    if (selectedComp) {
+      const isValmo = (selectedComp.name || '').toLowerCase().includes('valmo') || selectedComp.sheetType === 'valmo';
+      const customCycles = Array.isArray(selectedComp.cycles) && selectedComp.cycles.length > 0 ? selectedComp.cycles : null;
+
+      const rawOptions = customCycles
+        ? customCycles.map((cy) => ({ value: cy, label: cy }))
+        : isValmo
+        ? [
+            { value: 'Week 1', label: 'Week 1' },
+            { value: 'Week 2', label: 'Week 2' },
+            { value: 'Week 3', label: 'Week 3' },
+            { value: 'Week 4', label: 'Week 4' },
+          ]
+        : [
+            { value: 'Cycle 1 (1st - 15th)', label: 'Cycle 1 (1st - 15th)' },
+            { value: 'Cycle 2 (16th - End of Month)', label: 'Cycle 2 (16th - End of Month)' },
+          ];
+
+      return [
+        { value: 'all', label: isValmo ? 'All Weeks' : 'All Cycles', icon: Clock },
+        ...rawOptions.map((opt) => ({ ...opt, icon: Clock })),
+      ];
+    }
+
+    // Default when "All Franchise" is selected
+    return [
+      { value: 'all', label: 'All Cycles / Weeks', icon: Clock },
+      { value: 'Cycle 1 (1st - 15th)', label: 'Cycle 1 (1st - 15th)', icon: Clock },
+      { value: 'Cycle 2 (16th - End of Month)', label: 'Cycle 2 (16th - End of Month)', icon: Clock },
+      { value: 'Week 1', label: 'Week 1', icon: Clock },
+      { value: 'Week 2', label: 'Week 2', icon: Clock },
+      { value: 'Week 3', label: 'Week 3', icon: Clock },
+      { value: 'Week 4', label: 'Week 4', icon: Clock },
+    ];
+  }, [activeCompanies, selectedCompanyFilter]);
+
+  // Auto-reset cycle filter if selected cycle is not present in new company options
+  useEffect(() => {
+    if (selectedCycleFilter && selectedCycleFilter !== 'all') {
+      const isValid = cycleOptions.some((opt) => opt.value === selectedCycleFilter);
+      if (!isValid) {
+        setSelectedCycleFilter('all');
+      }
+    }
+  }, [cycleOptions, selectedCycleFilter, setSelectedCycleFilter]);
+
   // Page title lookup
   const getPageTitle = () => {
     const path = location.pathname;
@@ -93,6 +146,7 @@ export const Header = ({ onOpenMobileSidebar }) => {
     if (path === '/hub-expenses' || path === '/expenses') return 'Hub Expenses';
     if (path === '/transactions' || path === '/transaction-ledger') return 'Transaction Ledger';
     if (path === '/reports') return 'Reports';
+    if (path === '/notepad') return 'Smart Notepad';
     if (path === '/settings') return 'Settings';
     if (path === '/profile') return 'Profile';
     if (path.startsWith('/companies/')) return 'Company Details';
@@ -164,6 +218,20 @@ export const Header = ({ onOpenMobileSidebar }) => {
             size="sm"
             searchable={true}
             minWidth="115px"
+            className="shrink-0"
+          />
+        )}
+
+        {/* Global Payment Cycle / Week Filter Dropdown (Active on Dashboard & Franchise Payments) */}
+        {['/dashboard', '/my-payment', '/franchise-payments', '/payment-payout'].includes(location.pathname) && (
+          <CustomDropdown
+            value={selectedCycleFilter || 'all'}
+            onChange={setSelectedCycleFilter}
+            options={cycleOptions}
+            icon={Clock}
+            size="sm"
+            searchable={false}
+            minWidth="135px"
             className="shrink-0"
           />
         )}
