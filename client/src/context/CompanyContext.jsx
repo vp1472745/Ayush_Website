@@ -46,6 +46,7 @@ export const CompanyProvider = ({ children }) => {
         const active = formatted.filter((c) => c.status === 'Active');
         if (active.length > 0) {
           setSelectedCompanyFilter((prev) => {
+            if (prev === 'all') return 'all';
             if (!prev || !formatted.some((c) => (c.id || c._id) === prev)) {
               return active[0].id || active[0]._id;
             }

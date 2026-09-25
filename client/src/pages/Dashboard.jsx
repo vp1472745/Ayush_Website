@@ -13,7 +13,13 @@ import {
   Bell,
   Check,
   CreditCard,
-  ExternalLink,
+  CheckCircle2,
+  RotateCw,
+  Tag,
+  Receipt,
+  Plus,
+  BarChart3,
+  PieChart,
 } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { useTabRefresh } from '../context/RefreshContext';
@@ -21,6 +27,30 @@ import { useToast } from '../context/ToastContext';
 import { formatCurrency, formatNumber } from '../utils/calculations';
 import apiClient from '../api/apiClient';
 import { ENDPOINTS } from '../api/endpoints';
+
+// Company matching helper - checks ObjectId or string ID
+const isCompanyMatch = (recordComp, filterCompId) => {
+  if (!filterCompId || filterCompId === 'all') return true;
+  if (!recordComp) return false;
+  const rawId = recordComp?._id || recordComp?.id || recordComp;
+  return String(rawId).trim().toLowerCase() === String(filterCompId).trim().toLowerCase();
+};
+
+// Flexible cycle matching helper
+const isCycleMatch = (recordCycle, filterCycle) => {
+  if (!filterCycle || filterCycle === 'all') return true;
+  if (!recordCycle) return false;
+  const rc = recordCycle.toLowerCase().trim();
+  const fc = filterCycle.toLowerCase().trim();
+  if (rc === fc) return true;
+  if ((fc.includes('cycle 1') || fc.includes('1st')) && (rc.includes('cycle 1') || rc.includes('1st'))) return true;
+  if ((fc.includes('cycle 2') || fc.includes('16th')) && (rc.includes('cycle 2') || rc.includes('16th'))) return true;
+  if (fc.includes('week 1') && rc.includes('week 1')) return true;
+  if (fc.includes('week 2') && rc.includes('week 2')) return true;
+  if (fc.includes('week 3') && rc.includes('week 3')) return true;
+  if (fc.includes('week 4') && rc.includes('week 4')) return true;
+  return false;
+};
 
 export const Dashboard = () => {
   const navigate = useNavigate();
@@ -35,8 +65,9 @@ export const Dashboard = () => {
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(false);
-  const [performanceTab, setPerformanceTab] = useState('month'); // 'month' or 'fy'
   const [lastUpdatedTime, setLastUpdatedTime] = useState('');
+  const [hoveredBarIndex, setHoveredBarIndex] = useState(null);
+  const [hoveredCategory, setHoveredCategory] = useState(null);
 
   // Datasets from API
   const [myPayments, setMyPayments] = useState([]);
@@ -55,14 +86,14 @@ export const Dashboard = () => {
   const isAllCycles = !selectedCycleFilter || selectedCycleFilter === 'all';
   const selectedCompany = useMemo(() => {
     if (isAllCompanies) return null;
-    return (companies || []).find((c) => (c.id || c._id) === selectedCompanyFilter) || null;
+    return (companies || []).find((c) => String(c.id || c._id) === String(selectedCompanyFilter)) || null;
   }, [companies, selectedCompanyFilter, isAllCompanies]);
 
   // Load all dashboard financial datasets (month & financial year governed by global header)
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     try {
-      const monthParams = selectedMonthFilter ? { month: selectedMonthFilter } : {};
+      const monthParams = (selectedMonthFilter && selectedMonthFilter !== 'all') ? { month: selectedMonthFilter } : {};
       const paymentParams = { ...monthParams };
       if (selectedFinancialYear && selectedFinancialYear !== 'all') {
         paymentParams.financialYear = selectedFinancialYear;
@@ -82,31 +113,20 @@ export const Dashboard = () => {
         apiClient.get(ENDPOINTS.ADVANCES.GET_ALL),
       ]);
 
-      if (myPaymentsRes.status === 'fulfilled') {
-        const val = myPaymentsRes.value;
-        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : (Array.isArray(val?.data?.data) ? val.data.data : []));
-        setMyPayments(list);
-      }
-      if (riderPayoutsRes.status === 'fulfilled') {
-        const val = riderPayoutsRes.value;
-        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : (Array.isArray(val?.data?.data) ? val.data.data : []));
-        setRiderPayouts(list);
-      }
-      if (hubExpensesRes.status === 'fulfilled') {
-        const val = hubExpensesRes.value;
-        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : (Array.isArray(val?.data?.data) ? val.data.data : []));
-        setHubExpenses(list);
-      }
-      if (lossDetailsRes.status === 'fulfilled') {
-        const val = lossDetailsRes.value;
-        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : (Array.isArray(val?.data?.data) ? val.data.data : []));
-        setLossDetails(list);
-      }
-      if (advancesRes.status === 'fulfilled') {
-        const val = advancesRes.value;
-        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : (Array.isArray(val?.data?.data) ? val.data.data : []));
-        setAdvances(list);
-      }
+      const extractList = (res) => {
+        if (res.status !== 'fulfilled') return [];
+        const val = res.value;
+        if (Array.isArray(val)) return val;
+        if (Array.isArray(val?.data)) return val.data;
+        if (Array.isArray(val?.data?.data)) return val.data.data;
+        return [];
+      };
+
+      setMyPayments(extractList(myPaymentsRes));
+      setRiderPayouts(extractList(riderPayoutsRes));
+      setHubExpenses(extractList(hubExpensesRes));
+      setLossDetails(extractList(lossDetailsRes));
+      setAdvances(extractList(advancesRes));
 
       const now = new Date();
       setLastUpdatedTime(
@@ -129,194 +149,237 @@ export const Dashboard = () => {
     if (typeof fetchCompanies === 'function') fetchCompanies();
   });
 
-  // Filtered views according to global header selectedCompanyFilter & selectedCycleFilter
+  // -------------------------------------------------------------
+  // FILTERED DATASETS ACCORDING TO HEADER FILTERS
+  // -------------------------------------------------------------
+  // Filtered Franchise Payments (MyPayment collection)
   const filteredPayments = useMemo(() => {
     return myPayments.filter((p) => {
-      const pCompId = p.companyId?._id || p.companyId?.id || p.companyId;
-      const matchComp = isAllCompanies || pCompId === selectedCompanyFilter;
-      const matchCycle = isAllCycles || p.cycle === selectedCycleFilter;
+      const matchComp = isAllCompanies || isCompanyMatch(p.companyId, selectedCompanyFilter);
+      const matchCycle = isAllCycles || isCycleMatch(p.cycle, selectedCycleFilter);
       return matchComp && matchCycle;
     });
   }, [myPayments, selectedCompanyFilter, isAllCompanies, selectedCycleFilter, isAllCycles]);
 
+  // Filtered Rider Payouts
   const filteredRiderPayouts = useMemo(() => {
-    if (isAllCompanies) return riderPayouts;
-    return riderPayouts.filter(
-      (r) => (r.companyId?._id || r.companyId?.id || r.companyId) === selectedCompanyFilter
-    );
+    return riderPayouts.filter((r) => {
+      return isAllCompanies || isCompanyMatch(r.companyId, selectedCompanyFilter);
+    });
   }, [riderPayouts, selectedCompanyFilter, isAllCompanies]);
 
+  // Filtered Loss Details
   const filteredLossDetails = useMemo(() => {
-    if (isAllCompanies) return lossDetails;
-    return lossDetails.filter(
-      (l) => (l.companyId?._id || l.companyId?.id || l.companyId) === selectedCompanyFilter
-    );
+    return lossDetails.filter((l) => {
+      return isAllCompanies || isCompanyMatch(l.companyId, selectedCompanyFilter);
+    });
   }, [lossDetails, selectedCompanyFilter, isAllCompanies]);
 
+  // Filtered Hub Expenses (Company direct expenses or shared overheads)
+  const filteredHubExpenses = useMemo(() => {
+    if (isAllCompanies) return hubExpenses;
+    return hubExpenses.filter((e) => {
+      return !e.companyId || isCompanyMatch(e.companyId, selectedCompanyFilter);
+    });
+  }, [hubExpenses, selectedCompanyFilter, isAllCompanies]);
+
+  // Filtered Advances
+  const filteredAdvances = useMemo(() => {
+    if (isAllCompanies) return advances;
+    return advances.filter((a) => {
+      return !a.companyId || isCompanyMatch(a.companyId, selectedCompanyFilter);
+    });
+  }, [advances, selectedCompanyFilter, isAllCompanies]);
+
   // -------------------------------------------------------------
-  // COMPUTED TOP METRICS
+  // COMPUTED TOP METRICS (100% REAL FROM DATABASE, ZERO DUMMY DATA)
   // -------------------------------------------------------------
-  // 1. Franchise Revenue Received (from MyPayment or benchmark 1,00,000)
+  // 1. Franchise Revenue Received (from MyPayment)
   const totalRevenue = useMemo(() => {
-    const sum = filteredPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
-    return sum > 0 ? sum : 100000;
+    return filteredPayments.reduce((s, p) => {
+      const val = Number(p.amount) || Number(p.finalPayable) || 0;
+      return s + val;
+    }, 0);
   }, [filteredPayments]);
 
-  // 2. Rider Payout Cost (from RiderPayout or benchmark 1,15,509)
+  // 2. Rider Payout Cost
   const totalRiderPayout = useMemo(() => {
-    const sum = filteredRiderPayouts.reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
-    return sum > 0 ? sum : 115509;
+    return filteredRiderPayouts.reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
   }, [filteredRiderPayouts]);
 
-  // 3. Hub Expenses (office + overheads or benchmark 18,750)
+  // 2b. Rate Card Average across filtered riders
+  const avgRateCard = useMemo(() => {
+    const ridersWithRate = filteredRiderPayouts.filter((r) => Number(r.rateCard) > 0);
+    if (ridersWithRate.length === 0) return 0;
+    const total = ridersWithRate.reduce((s, r) => s + Number(r.rateCard), 0);
+    const avg = total / ridersWithRate.length;
+    return Number(avg.toFixed(2));
+  }, [filteredRiderPayouts]);
+
+  const ridersWithRateCount = useMemo(() => {
+    return filteredRiderPayouts.filter((r) => Number(r.rateCard) > 0).length;
+  }, [filteredRiderPayouts]);
+
+  // 3. Hub Expenses (office + operations)
   const totalHubExpenses = useMemo(() => {
-    const sum = hubExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    return sum > 0 ? sum : 18750;
-  }, [hubExpenses]);
+    return filteredHubExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  }, [filteredHubExpenses]);
 
-  // 4. Other Outflow & My Payments
-  const totalOtherExpenses = 2500;
-  const totalMyPaymentOut = 10000;
-
-  // 5. Losses & Deductions
+  // 4. Losses & Deductions
   const totalLoss = useMemo(() => {
-    const sum = filteredLossDetails.reduce((s, l) => s + (Number(l.price) || 0), 0);
-    return sum > 0 ? sum : 210;
+    return filteredLossDetails.reduce((s, l) => s + (Number(l.price) || 0), 0);
   }, [filteredLossDetails]);
 
   const unrecoveredLoss = useMemo(() => {
-    const sum = filteredLossDetails
-      .filter((l) => l.status !== 'Recovered')
+    return filteredLossDetails
+      .filter((l) => (l.status || '').toLowerCase() !== 'recovered')
       .reduce((s, l) => s + (Number(l.price) || 0), 0);
-    return sum > 0 ? sum : 210;
   }, [filteredLossDetails]);
 
-  // 6. Advances
+  const recoveredLoss = useMemo(() => {
+    return filteredLossDetails
+      .filter((l) => (l.status || '').toLowerCase() === 'recovered')
+      .reduce((s, l) => s + (Number(l.price) || 0), 0);
+  }, [filteredLossDetails]);
+
+  // 5. Advances
   const totalAdvanceGiven = useMemo(() => {
-    const sum = advances.reduce((s, a) => s + (Number(a.advance) || 0), 0);
-    return sum > 0 ? sum : 10000;
-  }, [advances]);
+    return filteredAdvances.reduce((s, a) => s + (Number(a.advance) || 0), 0);
+  }, [filteredAdvances]);
 
   const totalAdvanceRecovered = useMemo(() => {
-    const sum = advances.reduce((s, a) => s + (Number(a.advanceCut) || 0), 0);
-    return sum > 0 ? sum : 5000;
-  }, [advances]);
+    return filteredAdvances.reduce((s, a) => s + (Number(a.advanceCut) || 0), 0);
+  }, [filteredAdvances]);
 
   const totalAdvanceOutstanding = useMemo(() => {
-    const sum = advances.reduce(
-      (s, a) => s + (Number(a.remainingAmount) || (Number(a.advance) - Number(a.advanceCut)) || 0),
-      0
-    );
-    return sum > 0 ? sum : 5000;
-  }, [advances]);
+    return filteredAdvances.reduce((s, a) => {
+      const rem = Number(a.remainingAmount);
+      if (!isNaN(rem) && rem !== undefined && rem !== null && rem > 0) return s + rem;
+      const adv = Number(a.advance) || 0;
+      const cut = Number(a.advanceCut) || 0;
+      return s + Math.max(0, adv - cut);
+    }, 0);
+  }, [filteredAdvances]);
 
-  // 7. Net Business Profit (benchmark 35,241 as in image)
+  // 6. Net Business Profit = Revenue - Rider Payout - Hub Expenses - Unrecovered Loss
   const netProfit = useMemo(() => {
-    return 35241;
-  }, []);
+    return totalRevenue - totalRiderPayout - totalHubExpenses - unrecoveredLoss;
+  }, [totalRevenue, totalRiderPayout, totalHubExpenses, unrecoveredLoss]);
 
-  // Total Money Out = 1,51,969 (matches image)
+  // 7. Total Money Out = Rider Payout + Hub Expenses + Unrecovered Loss + Advances Given
   const totalMoneyOut = useMemo(() => {
-    return totalRiderPayout + totalHubExpenses + totalOtherExpenses + (isAllCompanies ? totalAdvanceGiven : 0) + unrecoveredLoss + totalMyPaymentOut;
-  }, [totalRiderPayout, totalHubExpenses, totalOtherExpenses, totalAdvanceGiven, unrecoveredLoss, totalMyPaymentOut, isAllCompanies]);
+    return totalRiderPayout + totalHubExpenses + unrecoveredLoss + totalAdvanceGiven;
+  }, [totalRiderPayout, totalHubExpenses, unrecoveredLoss, totalAdvanceGiven]);
 
-  // Balances
-  const openingBalance = 8000;
-  const closingBalance = 28500;
+  // 8. Opening & Closing Balance
+  const openingBalance = 0;
+  const closingBalance = useMemo(() => {
+    return openingBalance + totalRevenue - totalMoneyOut;
+  }, [openingBalance, totalRevenue, totalMoneyOut]);
 
-  // Rider counts & status
+  // 9. Rider stats
   const riderStats = useMemo(() => {
-    const total = filteredRiderPayouts.length > 0 ? filteredRiderPayouts.length : 27;
-    const paid = filteredRiderPayouts.filter((r) => r.paymentStatus === 'PAID').length;
+    const total = filteredRiderPayouts.length;
+    const paid = filteredRiderPayouts.filter((r) => (r.paymentStatus || '').toUpperCase() === 'PAID').length;
     const pending = total - paid;
-    const pendingAmount = totalRiderPayout;
-    return { total, paid, pending, pendingAmount };
-  }, [filteredRiderPayouts, totalRiderPayout]);
+    const paidAmount = filteredRiderPayouts
+      .filter((r) => (r.paymentStatus || '').toUpperCase() === 'PAID')
+      .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
+    const pendingAmount = filteredRiderPayouts
+      .filter((r) => (r.paymentStatus || '').toUpperCase() !== 'PAID')
+      .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
+    return { total, paid, pending, paidAmount, pendingAmount };
+  }, [filteredRiderPayouts]);
+
+  // 10. Advance stats
+  const advanceStats = useMemo(() => {
+    const total = filteredAdvances.length;
+    const recovered = filteredAdvances.filter((a) => {
+      const rem = Number(a.remainingAmount);
+      const adv = Number(a.advance) || 0;
+      const cut = Number(a.advanceCut) || 0;
+      return rem === 0 || (adv > 0 && cut >= adv);
+    }).length;
+    const pending = total - recovered;
+    return { total, recovered, pending };
+  }, [filteredAdvances]);
+
+  // 11. Loss stats
+  const lossStats = useMemo(() => {
+    const total = filteredLossDetails.length;
+    const recovered = filteredLossDetails.filter((l) => (l.status || '').toLowerCase() === 'recovered').length;
+    const pending = total - recovered;
+    return { total, recovered, pending };
+  }, [filteredLossDetails]);
 
   // -------------------------------------------------------------
-  // MONEY IN BY COMPANY (Sub-items in Money In column)
+  // MONEY IN BY COMPANY (Real Franchise Payments for selected period)
   // -------------------------------------------------------------
   const moneyInByCompany = useMemo(() => {
-    const defaults = [
-      { id: '1', name: 'Valmo', amount: 35000 },
-      { id: '2', name: 'Shadowfax', amount: 45000 },
-      { id: '3', name: 'XpressBees', amount: 20000 },
-    ];
+    const targetCompanies = isAllCompanies
+      ? activeCompanies
+      : activeCompanies.filter((c) => isCompanyMatch(c.id || c._id, selectedCompanyFilter));
 
-    if (activeCompanies.length === 0) return defaults;
-
-    return activeCompanies.map((comp) => {
+    return targetCompanies.map((comp) => {
       const compId = comp.id || comp._id;
-      const lower = (comp.name || '').toLowerCase();
-      const def = defaults.find((d) => lower.includes(d.name.toLowerCase()));
+      const compPayments = myPayments.filter((p) => {
+        const matchComp = isCompanyMatch(p.companyId, compId);
+        const matchCycle = isAllCycles || isCycleMatch(p.cycle, selectedCycleFilter);
+        return matchComp && matchCycle;
+      });
 
-      const realAmount = myPayments
-        .filter((p) => {
-          const pCompId = p.companyId?._id || p.companyId?.id || p.companyId;
-          const matchComp = pCompId === compId;
-          const matchCycle = isAllCycles || p.cycle === selectedCycleFilter;
-          return matchComp && matchCycle;
-        })
-        .reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
+      const amount = compPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
 
       return {
         id: compId,
         name: comp.name,
-        amount: realAmount > 0 ? realAmount : (def ? def.amount : 25000),
-        isSelected: !isAllCompanies && compId === selectedCompanyFilter,
+        amount,
+        isSelected: !isAllCompanies && isCompanyMatch(compId, selectedCompanyFilter),
       };
     });
   }, [activeCompanies, myPayments, isAllCompanies, selectedCompanyFilter, isAllCycles, selectedCycleFilter]);
 
   // -------------------------------------------------------------
-  // FRANCHISE PERFORMANCE TABLE (Matrix by Company)
+  // FRANCHISE PERFORMANCE TABLE (Matrix by Company from Real DB Data)
   // -------------------------------------------------------------
   const franchisePerformance = useMemo(() => {
-    const defaults = [
-      { id: '1', name: 'Valmo', income: 35000, payout: 40500, hubExpense: 6500, otherExpense: 1200, loss: 60, myPayment: 3000, netProfit: 15240 },
-      { id: '2', name: 'Shadowfax', income: 45000, payout: 52000, hubExpense: 8250, otherExpense: 800, loss: 100, myPayment: 5000, netProfit: 21850 },
-      { id: '3', name: 'XpressBees', income: 20000, payout: 23009, hubExpense: 3000, otherExpense: 500, loss: 50, myPayment: 2000, netProfit: 8441 },
-    ];
+    const targetCompanies = isAllCompanies
+      ? activeCompanies
+      : activeCompanies.filter((c) => isCompanyMatch(c.id || c._id, selectedCompanyFilter));
 
-    const sourceCompanies = activeCompanies.length > 0 ? activeCompanies : defaults;
-
-    return sourceCompanies.map((comp) => {
+    return targetCompanies.map((comp) => {
       const compId = comp.id || comp._id;
-      const lower = (comp.name || '').toLowerCase();
-      const def = defaults.find((d) => lower.includes(d.name.toLowerCase()));
 
+      // Real income from Franchise Payments (MyPayment)
       const compPayments = myPayments.filter((p) => {
-        const pCompId = p.companyId?._id || p.companyId?.id || p.companyId;
-        const matchComp = pCompId === compId;
-        const matchCycle = isAllCycles || p.cycle === selectedCycleFilter;
+        const matchComp = isCompanyMatch(p.companyId, compId);
+        const matchCycle = isAllCycles || isCycleMatch(p.cycle, selectedCycleFilter);
         return matchComp && matchCycle;
       });
-      const realIncome = compPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
+      const income = compPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
 
-      const compRiders = riderPayouts.filter(
-        (p) => (p.companyId?._id || p.companyId?.id || p.companyId) === compId
-      );
-      const realPayout = compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
+      // Real rider payout
+      const compRiders = riderPayouts.filter((p) => isCompanyMatch(p.companyId, compId));
+      const payout = compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
 
+      // Real unrecovered loss
       const compLoss = lossDetails
-        .filter((l) => (l.companyId?._id || l.companyId?.id || l.companyId) === compId && l.status !== 'Recovered')
+        .filter((l) => isCompanyMatch(l.companyId, compId) && (l.status || '').toLowerCase() !== 'recovered')
         .reduce((s, l) => s + (Number(l.price) || 0), 0);
 
+      // Real hub expenses (direct + shared proportion)
       const directExp = hubExpenses
-        .filter((e) => (e.companyId?._id || e.companyId?.id || e.companyId) === compId)
+        .filter((e) => isCompanyMatch(e.companyId, compId))
         .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
       const sharedExp = hubExpenses
         .filter((e) => !e.companyId)
-        .reduce((s, e) => s + (Number(e.amount) || 0), 0) / (sourceCompanies.length || 1);
-      const realHubExpense = directExp + sharedExp;
+        .reduce((s, e) => s + (Number(e.amount) || 0), 0) / (activeCompanies.length || 1);
 
-      const income = realIncome > 0 ? realIncome : (def ? def.income : 30000);
-      const payout = realPayout > 0 ? realPayout : (def ? def.payout : 35000);
-      const hubExpense = realHubExpense > 0 ? realHubExpense : (def ? def.hubExpense : 5000);
-      const otherExpense = def ? def.otherExpense : Math.round(hubExpense * 0.15);
-      const loss = compLoss > 0 ? compLoss : (def ? def.loss : 50);
-      const myPayment = def ? def.myPayment : Math.round(income * 0.08);
-      const netProfit = def ? def.netProfit : Math.round(income * 0.35);
+      const hubExpense = directExp + Math.round(sharedExp);
+      const otherExpense = 0;
+      const myPayment = 0;
+      const compNetProfit = income - payout - hubExpense - compLoss;
 
       return {
         companyId: compId,
@@ -325,10 +388,10 @@ export const Dashboard = () => {
         payout,
         hubExpense,
         otherExpense,
-        loss,
+        loss: compLoss,
         myPayment,
-        netProfit,
-        isSelected: !isAllCompanies && compId === selectedCompanyFilter,
+        netProfit: compNetProfit,
+        isSelected: !isAllCompanies && isCompanyMatch(compId, selectedCompanyFilter),
       };
     });
   }, [activeCompanies, myPayments, riderPayouts, lossDetails, hubExpenses, isAllCompanies, selectedCompanyFilter, isAllCycles, selectedCycleFilter]);
@@ -350,65 +413,94 @@ export const Dashboard = () => {
   }, [franchisePerformance]);
 
   // -------------------------------------------------------------
-  // EXPENSE BREAKDOWN (Donut Chart & Legend)
+  // DYNAMIC BAR CHART SCALING (Adaptive multi-tier scaling)
+  // -------------------------------------------------------------
+  const chartMaxVal = useMemo(() => {
+    let max = 0;
+    franchisePerformance.forEach((f) => {
+      const exp = f.payout + f.hubExpense;
+      const prof = Math.max(0, f.netProfit);
+      max = Math.max(max, f.income, exp, prof);
+    });
+    if (max <= 0) return 1000;
+    if (max <= 500) return 500;
+    if (max <= 1000) return 1000;
+    if (max <= 2500) return 2500;
+    if (max <= 5000) return 5000;
+    if (max <= 10000) return 10000;
+    if (max <= 25000) return 25000;
+    if (max <= 50000) return 50000;
+    if (max <= 100000) return 100000;
+    return Math.ceil(max / 50000) * 50000;
+  }, [franchisePerformance]);
+
+  // -------------------------------------------------------------
+  // DYNAMIC EXPENSE BREAKDOWN (From real Hub Expenses)
   // -------------------------------------------------------------
   const expenseCategories = useMemo(() => {
-    return [
-      { name: 'Rent', color: '#3b82f6', percent: 38, amount: 7125 },
-      { name: 'Fuel', color: '#10b981', percent: 18, amount: 3375 },
-      { name: 'Electricity', color: '#f59e0b', percent: 12, amount: 2250 },
-      { name: 'Staff', color: '#8b5cf6', percent: 10, amount: 1875 },
-      { name: 'Internet', color: '#06b6d4', percent: 8, amount: 1500 },
-      { name: 'Other', color: '#64748b', percent: 14, amount: 2625 },
-    ];
-  }, []);
+    if (filteredHubExpenses.length === 0) return [];
+
+    const catMap = {};
+    filteredHubExpenses.forEach((e) => {
+      const name = (e.expenseName || 'General').trim();
+      const amt = Number(e.amount) || 0;
+      catMap[name] = (catMap[name] || 0) + amt;
+    });
+
+    const total = Object.values(catMap).reduce((s, v) => s + v, 0);
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#64748b'];
+
+    return Object.entries(catMap).map(([name, amount], idx) => {
+      const percent = total > 0 ? Math.round((amount / total) * 100) : 0;
+      return {
+        name,
+        color: colors[idx % colors.length],
+        percent,
+        amount,
+      };
+    });
+  }, [filteredHubExpenses]);
+
+  const activeExpenseCategory = useMemo(() => {
+    if (!hoveredCategory) return null;
+    return expenseCategories.find((c) => c.name === hoveredCategory) || null;
+  }, [hoveredCategory, expenseCategories]);
 
   // -------------------------------------------------------------
-  // FRANCHISE-WISE SHIPMENT SUMMARY
+  // DYNAMIC SHIPMENT SUMMARY (From real Rider Payouts)
   // -------------------------------------------------------------
   const shipmentSummary = useMemo(() => {
-    const benchmarks = {
-      valmo: { total: 1245, delivered: 1120, rto: 78, oda: 32, pending: 15 },
-      shadowfax: { total: 2156, delivered: 1890, rto: 148, oda: 76, pending: 42 },
-      xpressbees: { total: 987, delivered: 865, rto: 62, oda: 28, pending: 32 },
-    };
+    const targetCompanies = isAllCompanies
+      ? activeCompanies
+      : activeCompanies.filter((c) => isCompanyMatch(c.id || c._id, selectedCompanyFilter));
 
-    const sourceCompanies = activeCompanies.length > 0 ? activeCompanies : [
-      { id: '1', name: 'Valmo' },
-      { id: '2', name: 'Shadowfax' },
-      { id: '3', name: 'XpressBees' },
-    ];
-
-    const rows = sourceCompanies.map((c) => {
+    const rows = targetCompanies.map((c) => {
       const compId = c.id || c._id;
-      const lower = (c.name || '').toLowerCase();
-      const compRiders = riderPayouts.filter(
-        (r) => (r.companyId?._id || r.companyId?.id || r.companyId) === compId
+      const compRiders = riderPayouts.filter((r) => isCompanyMatch(r.companyId, compId));
+
+      const delivered = compRiders.reduce((s, r) => s + (Number(r.delivered) || 0), 0);
+      const pickup = compRiders.reduce((s, r) => s + (Number(r.pickup) || 0), 0);
+      const primary = compRiders.reduce((s, r) => s + (Number(r.primary) || 0), 0);
+      const clubbed = compRiders.reduce((s, r) => s + (Number(r.clubbed) || 0), 0);
+      const total = compRiders.reduce(
+        (s, r) =>
+          s +
+          (Number(r.deliveredPickupTotal) ||
+            (Number(r.delivered) || 0) +
+            (Number(r.pickup) || 0) +
+            (Number(r.primary) || 0) +
+            (Number(r.clubbed) || 0)),
+        0
       );
-
-      let delivered = compRiders.reduce((s, r) => s + (Number(r.delivered) || 0), 0);
-      let rto = compRiders.reduce((s, r) => s + (Number(r.rto) || 0), 0);
-      let oda = compRiders.reduce((s, r) => s + (Number(r.oda) || 0), 0);
-      let pending = compRiders.reduce((s, r) => s + (Number(r.pending) || 0), 0);
-
-      if (delivered === 0) {
-        const key = Object.keys(benchmarks).find((k) => lower.includes(k));
-        const b = key ? benchmarks[key] : { total: 1245, delivered: 1120, rto: 78, oda: 32, pending: 15 };
-        return {
-          id: compId,
-          name: c.name,
-          ...b,
-        };
-      }
 
       return {
         id: compId,
         name: c.name,
-        total: delivered + rto + oda + pending,
-        delivered,
-        rto,
-        oda,
-        pending,
+        total,
+        delivered: delivered || (primary + clubbed),
+        rto: 0,
+        oda: 0,
+        pending: pickup,
       };
     });
 
@@ -424,125 +516,175 @@ export const Dashboard = () => {
     );
 
     return { rows, totals };
-  }, [activeCompanies, riderPayouts]);
+  }, [activeCompanies, riderPayouts, isAllCompanies, selectedCompanyFilter]);
+
+  // -------------------------------------------------------------
+  // ATTENTION REQUIRED ITEMS (Real Pending Tasks)
+  // -------------------------------------------------------------
+  const attentionItems = useMemo(() => {
+    const items = [];
+    if (riderStats.pending > 0) {
+      items.push({
+        id: 'riders',
+        icon: Users,
+        iconColor: 'text-rose-500',
+        title: `${riderStats.pending} Rider Payments Pending`,
+        value: formatCurrency(riderStats.pendingAmount),
+        path: '/payout-details',
+      });
+    }
+    if (totalAdvanceOutstanding > 0) {
+      items.push({
+        id: 'advances',
+        icon: Wallet,
+        iconColor: 'text-amber-500',
+        title: `${formatCurrency(totalAdvanceOutstanding)} Advance Outstanding`,
+        value: `${advanceStats.pending} Riders`,
+        path: '/advanced',
+      });
+    }
+    if (unrecoveredLoss > 0) {
+      items.push({
+        id: 'losses',
+        icon: AlertTriangle,
+        iconColor: 'text-rose-500',
+        title: `${formatCurrency(unrecoveredLoss)} Loss Recovery Pending`,
+        value: `${lossStats.pending} Incidents`,
+        path: '/loss-details',
+      });
+    }
+    const pendingPayments = filteredPayments.filter((p) => p.status === 'Pending');
+    if (pendingPayments.length > 0) {
+      const pendingPayAmt = pendingPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
+      items.push({
+        id: 'franchise-payments',
+        icon: IndianRupee,
+        iconColor: 'text-blue-500',
+        title: `${pendingPayments.length} Franchise Payments Pending`,
+        value: formatCurrency(pendingPayAmt),
+        path: '/my-payment',
+      });
+    }
+    return items;
+  }, [riderStats, totalAdvanceOutstanding, advanceStats, unrecoveredLoss, lossStats, filteredPayments]);
 
   return (
     <div className="space-y-4 pb-8">
-      {/* 1. TOP HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-extrabold text-[#111827] tracking-tight">Dashboard</h1>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
-              {isAllCompanies ? 'All Franchises' : (selectedCompany?.name || 'Franchise')}
-            </span>
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-              {selectedMonthFilter} {selectedFinancialYear ? `(${selectedFinancialYear})` : ''}
-            </span>
-            {!isAllCycles && (
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                {selectedCycleFilter}
-              </span>
-            )}
+      {/* 1. TOP 5 EXECUTIVE KPI CARDS (Simple, Clean, Low-Height) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
+        {/* Card 1: Franchise Revenue */}
+        <div
+          onClick={() => navigate('/my-payment')}
+          className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center gap-3.5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100/70 text-emerald-600 flex items-center justify-center shrink-0">
+            <IndianRupee className="w-5 h-5" />
           </div>
-          <p className="text-xs text-gray-500 font-medium mt-0.5">
-            Business overview & financial summary
-          </p>
-        </div>
-
-        {/* Live Status */}
-        {lastUpdatedTime && (
-          <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Last Updated : {lastUpdatedTime}</span>
-          </div>
-        )}
-      </div>
-
-      {/* 2. TOP 4 EXECUTIVE KPI CARDS (Other Outflow & Cash/Balance removed as requested) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Franchise Revenue [Received] */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-              <IndianRupee className="w-5 h-5" />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-gray-500 truncate leading-tight">
+              Franchise Revenue
             </div>
-            <div>
-              <div className="text-xs font-bold text-gray-900 leading-tight">Franchise Revenue</div>
-              <div className="text-[10px] text-gray-500 font-medium leading-tight">
-                [Received]
-                {!isAllCycles && <span className="text-purple-600 ml-1 font-semibold">• {selectedCycleFilter}</span>}
-              </div>
+            <div className="text-xl font-bold text-gray-900 leading-tight mt-0.5">
+              {formatCurrency(totalRevenue)}
             </div>
-          </div>
-          <div className="text-2xl font-black text-gray-900 mt-3 tracking-tight">
-            {formatCurrency(totalRevenue)}
-          </div>
-          <div className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-1">
-            <span>↑ 12% from last cycle</span>
+            <div className="text-[11px] text-gray-400 truncate mt-0.5">
+              {filteredPayments.length > 0
+                ? `${filteredPayments.length} Payment Cycle${filteredPayments.length > 1 ? 's' : ''}`
+                : 'No payments recorded'}
+            </div>
           </div>
         </div>
 
         {/* Card 2: Rider Payout */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center shrink-0">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-gray-900 leading-tight">Rider Payout</div>
-              <div className="text-[10px] text-gray-500 font-medium leading-tight">
-                {isAllCompanies ? '(For Riders)' : `(${selectedCompany?.name || 'Selected'})`}
-              </div>
-            </div>
+        <div
+          onClick={() => navigate('/payout-details')}
+          className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center gap-3.5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100/70 text-rose-500 flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5" />
           </div>
-          <div className="text-2xl font-black text-gray-900 mt-3 tracking-tight">
-            {formatCurrency(totalRiderPayout)}
-          </div>
-          <div className="text-[11px] font-semibold text-rose-600 mt-1 flex items-center gap-1">
-            <span>↑ 8% from last cycle</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-gray-500 truncate leading-tight">
+              Rider Payout
+            </div>
+            <div className="text-xl font-bold text-gray-900 leading-tight mt-0.5">
+              {formatCurrency(totalRiderPayout)}
+            </div>
+            <div className="text-[11px] text-gray-400 truncate mt-0.5">
+              {riderStats.total} Riders Total ({riderStats.pending} Pending)
+            </div>
           </div>
         </div>
 
         {/* Card 3: Hub Expenses */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-              <Building2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-gray-900 leading-tight">Hub Expenses</div>
-              <div className="text-[10px] text-gray-500 font-medium leading-tight">
-                (Office + Operations)
-              </div>
-            </div>
+        <div
+          onClick={() => navigate('/hub-expenses')}
+          className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center gap-3.5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100/70 text-amber-600 flex items-center justify-center shrink-0">
+            <Building2 className="w-5 h-5" />
           </div>
-          <div className="text-2xl font-black text-gray-900 mt-3 tracking-tight">
-            {formatCurrency(totalHubExpenses)}
-          </div>
-          <div className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-1">
-            <span>↓ 5% from last cycle</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-gray-500 truncate leading-tight">
+              Hub Expenses
+            </div>
+            <div className="text-xl font-bold text-gray-900 leading-tight mt-0.5">
+              {formatCurrency(totalHubExpenses)}
+            </div>
+            <div className="text-[11px] text-gray-400 truncate mt-0.5">
+              {filteredHubExpenses.length} Expense Entries
+            </div>
           </div>
         </div>
 
-        {/* Card 4: Net Profit */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-5 h-5" />
+        {/* Card 4: Avg Rate Card (to the left of Net Profit) */}
+        <div
+          onClick={() => navigate('/payout-details')}
+          className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all cursor-pointer flex items-center gap-3.5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100/70 text-purple-600 flex items-center justify-center shrink-0">
+            <Tag className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-gray-500 truncate leading-tight">
+              Avg Rate Card
             </div>
-            <div>
-              <div className="text-xs font-bold text-gray-900 leading-tight">Net Profit</div>
-              <div className="text-[10px] text-gray-500 font-medium leading-tight">
-                (Business Profit)
-              </div>
+            <div className="text-xl font-bold text-purple-700 leading-tight mt-0.5">
+              ₹{avgRateCard > 0 ? (avgRateCard % 1 === 0 ? avgRateCard : avgRateCard.toFixed(1)) : '0'}
+            </div>
+            <div className="text-[11px] text-gray-400 truncate mt-0.5">
+              {ridersWithRateCount > 0
+                ? `Avg of ${ridersWithRateCount} Active Rider${ridersWithRateCount > 1 ? 's' : ''}`
+                : 'No rate cards recorded'}
             </div>
           </div>
-          <div className="text-2xl font-black text-blue-600 mt-3 tracking-tight">
-            {formatCurrency(netProfit)}
+        </div>
+
+        {/* Card 5: Net Profit */}
+        <div className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3.5">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+              netProfit >= 0
+                ? 'bg-blue-50 border-blue-100/70 text-blue-600'
+                : 'bg-rose-50 border-rose-100/70 text-rose-600'
+            }`}
+          >
+            <TrendingUp className="w-5 h-5" />
           </div>
-          <div className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-1">
-            <span>↑ 15% from last cycle</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-gray-500 truncate leading-tight">
+              Net Profit
+            </div>
+            <div
+              className={`text-xl font-bold leading-tight mt-0.5 ${
+                netProfit >= 0 ? 'text-blue-600' : 'text-rose-600'
+              }`}
+            >
+              {formatCurrency(netProfit)}
+            </div>
+            <div className="text-[11px] text-gray-400 truncate mt-0.5">
+              Revenue - Payout - Hub - Loss
+            </div>
           </div>
         </div>
       </div>
@@ -550,7 +692,7 @@ export const Dashboard = () => {
       {/* 3. ROW 2: MONEY FLOW (LEFT) & FRANCHISE PERFORMANCE (RIGHT) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* LEFT BLOCK: Money Flow (This Month) - 3 Columns inside */}
-        <div className="lg:col-span-6 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+        <div className="lg:col-span-6 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div>
             <div className="text-xs font-bold text-gray-900 mb-3 flex items-center gap-1.5 flex-wrap">
               <span>Money Flow</span>
@@ -590,7 +732,7 @@ export const Dashboard = () => {
                     </div>
                     <div className="flex justify-between text-gray-700">
                       <span>Adjustments/Recovery</span>
-                      <span>₹ 0</span>
+                      <span>{formatCurrency(recoveredLoss)}</span>
                     </div>
                   </div>
                 </div>
@@ -598,7 +740,7 @@ export const Dashboard = () => {
                 <div className="mt-3 pt-2 border-t border-emerald-50">
                   <div className="bg-emerald-50 text-emerald-900 font-extrabold text-xs py-1.5 px-2 rounded-lg flex justify-between">
                     <span>Total Money In</span>
-                    <span>{formatCurrency(totalRevenue)}</span>
+                    <span>{formatCurrency(totalRevenue + recoveredLoss)}</span>
                   </div>
                 </div>
               </div>
@@ -623,20 +765,12 @@ export const Dashboard = () => {
                       <strong className="text-gray-900">{formatCurrency(totalHubExpenses)}</strong>
                     </div>
                     <div className="flex justify-between">
-                      <span>Other Expenses</span>
-                      <strong className="text-gray-900">{formatCurrency(totalOtherExpenses)}</strong>
-                    </div>
-                    <div className="flex justify-between">
                       <span>Rider Advances</span>
                       <strong className="text-gray-900">{formatCurrency(totalAdvanceGiven)}</strong>
                     </div>
                     <div className="flex justify-between">
                       <span>Loss / Deduction</span>
                       <strong className="text-gray-900">{formatCurrency(unrecoveredLoss)}</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>My Payments</span>
-                      <strong className="text-gray-900">{formatCurrency(totalMyPaymentOut)}</strong>
                     </div>
                   </div>
                 </div>
@@ -684,7 +818,7 @@ export const Dashboard = () => {
         </div>
 
         {/* RIGHT BLOCK: Franchise Performance (Profit & Loss Table) */}
-        <div className="lg:col-span-6 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs">
+        <div className="lg:col-span-6 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
             <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5 flex-wrap">
               <span>Franchise Performance</span>
@@ -710,7 +844,7 @@ export const Dashboard = () => {
                       {f.name}
                     </th>
                   ))}
-                  <th className="py-2 px-2 text-right text-gray-900">Total</th>
+                  {isAllCompanies && <th className="py-2 px-2 text-right text-gray-900">Total</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -721,9 +855,11 @@ export const Dashboard = () => {
                       {formatCurrency(f.income)}
                     </td>
                   ))}
-                  <td className="py-1.5 px-2 text-right font-bold text-gray-900">
-                    {formatCurrency(allCompaniesTotals.income)}
-                  </td>
+                  {isAllCompanies && (
+                    <td className="py-1.5 px-2 text-right font-bold text-gray-900">
+                      {formatCurrency(allCompaniesTotals.income)}
+                    </td>
+                  )}
                 </tr>
 
                 <tr>
@@ -733,9 +869,11 @@ export const Dashboard = () => {
                       {formatCurrency(f.payout)}
                     </td>
                   ))}
-                  <td className="py-1.5 px-2 text-right font-bold text-gray-800">
-                    {formatCurrency(allCompaniesTotals.payout)}
-                  </td>
+                  {isAllCompanies && (
+                    <td className="py-1.5 px-2 text-right font-bold text-gray-800">
+                      {formatCurrency(allCompaniesTotals.payout)}
+                    </td>
+                  )}
                 </tr>
 
                 <tr>
@@ -745,21 +883,11 @@ export const Dashboard = () => {
                       {formatCurrency(f.hubExpense)}
                     </td>
                   ))}
-                  <td className="py-1.5 px-2 text-right font-bold text-gray-800">
-                    {formatCurrency(allCompaniesTotals.hubExpense)}
-                  </td>
-                </tr>
-
-                <tr>
-                  <td className="py-1.5 px-2 font-medium text-gray-700">Other Expenses</td>
-                  {franchisePerformance.map((f) => (
-                    <td key={f.companyId} className="py-1.5 px-2 text-right text-gray-700">
-                      {formatCurrency(f.otherExpense)}
+                  {isAllCompanies && (
+                    <td className="py-1.5 px-2 text-right font-bold text-gray-800">
+                      {formatCurrency(allCompaniesTotals.hubExpense)}
                     </td>
-                  ))}
-                  <td className="py-1.5 px-2 text-right font-bold text-gray-800">
-                    {formatCurrency(allCompaniesTotals.otherExpense)}
-                  </td>
+                  )}
                 </tr>
 
                 <tr>
@@ -769,33 +897,30 @@ export const Dashboard = () => {
                       {formatCurrency(f.loss)}
                     </td>
                   ))}
-                  <td className="py-1.5 px-2 text-right font-bold text-gray-800">
-                    {formatCurrency(allCompaniesTotals.loss)}
-                  </td>
-                </tr>
-
-                <tr>
-                  <td className="py-1.5 px-2 font-medium text-gray-700">My Payment</td>
-                  {franchisePerformance.map((f) => (
-                    <td key={f.companyId} className="py-1.5 px-2 text-right text-gray-700">
-                      {formatCurrency(f.myPayment)}
+                  {isAllCompanies && (
+                    <td className="py-1.5 px-2 text-right font-bold text-gray-800">
+                      {formatCurrency(allCompaniesTotals.loss)}
                     </td>
-                  ))}
-                  <td className="py-1.5 px-2 text-right font-bold text-gray-800">
-                    {formatCurrency(allCompaniesTotals.myPayment)}
-                  </td>
+                  )}
                 </tr>
 
                 <tr className="bg-emerald-50/60 font-bold border-t border-emerald-200">
                   <td className="py-2 px-2 text-emerald-900">Net Profit</td>
                   {franchisePerformance.map((f) => (
-                    <td key={f.companyId} className="py-2 px-2 text-right text-emerald-700 font-extrabold">
+                    <td
+                      key={f.companyId}
+                      className={`py-2 px-2 text-right font-extrabold ${f.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}
+                    >
                       {formatCurrency(f.netProfit)}
                     </td>
                   ))}
-                  <td className="py-2 px-2 text-right text-emerald-700 font-black">
-                    {formatCurrency(allCompaniesTotals.netProfit)}
-                  </td>
+                  {isAllCompanies && (
+                    <td
+                      className={`py-2 px-2 text-right font-black ${allCompaniesTotals.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}
+                    >
+                      {formatCurrency(allCompaniesTotals.netProfit)}
+                    </td>
+                  )}
                 </tr>
               </tbody>
             </table>
@@ -806,176 +931,339 @@ export const Dashboard = () => {
       {/* 4. ROW 3: CHARTS & SHIPMENT SUMMARY */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* 1. Bar Chart: Revenue vs Expense vs Profit */}
-        <div className="lg:col-span-4 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-1 mb-2">
-            <div className="text-xs font-bold text-gray-900">Revenue vs Expense vs Profit</div>
-            <div className="flex items-center gap-2 text-[10px] font-bold">
-              <span className="flex items-center gap-1 text-emerald-600">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" /> Revenue
-              </span>
-              <span className="flex items-center gap-1 text-rose-600">
-                <span className="w-2 h-2 rounded-full bg-rose-500" /> Expense
-              </span>
-              <span className="flex items-center gap-1 text-blue-600">
-                <span className="w-2 h-2 rounded-full bg-blue-500" /> Profit
-              </span>
-            </div>
-          </div>
-
-          {/* Bar Chart with Y-axis markers */}
-          <div className="h-44 flex items-end justify-between gap-2 pt-4 relative">
-            {/* Left Y-axis values */}
-            <div className="flex flex-col justify-between h-32 text-[9px] text-gray-400 font-bold shrink-0 pr-1">
-              <span>₹ 60,000</span>
-              <span>₹ 40,000</span>
-              <span>₹ 20,000</span>
-              <span>₹ 0</span>
-            </div>
-
-            {/* Bars container */}
-            <div className="flex-1 flex items-end justify-around h-32 border-b border-gray-100 pb-1">
-              {franchisePerformance.map((f) => {
-                const maxVal = 60000;
-                const revH = Math.min(100, Math.round((f.income / maxVal) * 100));
-                const expH = Math.min(100, Math.round(((f.payout + f.hubExpense) / maxVal) * 100));
-                const profH = Math.min(100, Math.round((Math.max(0, f.netProfit) / maxVal) * 100));
-
-                return (
-                  <div key={f.companyId} className="flex flex-col items-center gap-1">
-                    <div className="flex items-end gap-1 h-28">
-                      <div
-                        title={`Revenue: ${formatCurrency(f.income)}`}
-                        style={{ height: `${revH}%` }}
-                        className="w-2.5 bg-emerald-500 rounded-t-sm transition-all"
-                      />
-                      <div
-                        title={`Expense: ${formatCurrency(f.payout + f.hubExpense)}`}
-                        style={{ height: `${expH}%` }}
-                        className="w-2.5 bg-rose-500 rounded-t-sm transition-all"
-                      />
-                      <div
-                        title={`Profit: ${formatCurrency(f.netProfit)}`}
-                        style={{ height: `${profH}%` }}
-                        className="w-2.5 bg-blue-500 rounded-t-sm transition-all"
-                      />
-                    </div>
-                    <span className="text-[10px] font-bold text-gray-600 truncate max-w-[65px] text-center">
-                      {f.name}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Donut Chart: Expense Breakdown */}
-        <div className="lg:col-span-4 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-          <div className="text-xs font-bold text-gray-900 mb-2">Expense Breakdown</div>
-
-          <div className="flex items-center justify-between gap-3">
-            {/* Donut graphic */}
-            <div className="relative w-28 h-28 flex items-center justify-center shrink-0">
-              <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
-                <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#f1f5f9" strokeWidth="4" />
-                {/* Rent: 38% */}
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.9155"
-                  fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="4"
-                  strokeDasharray="38 62"
-                  strokeDashoffset="0"
-                />
-                {/* Fuel: 18% */}
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.9155"
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="4"
-                  strokeDasharray="18 82"
-                  strokeDashoffset="-38"
-                />
-                {/* Electricity: 12% */}
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.9155"
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth="4"
-                  strokeDasharray="12 88"
-                  strokeDashoffset="-56"
-                />
-                {/* Staff: 10% */}
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.9155"
-                  fill="none"
-                  stroke="#8b5cf6"
-                  strokeWidth="4"
-                  strokeDasharray="10 90"
-                  strokeDashoffset="-68"
-                />
-                {/* Internet: 8% */}
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.9155"
-                  fill="none"
-                  stroke="#06b6d4"
-                  strokeWidth="4"
-                  strokeDasharray="8 92"
-                  strokeDashoffset="-78"
-                />
-                {/* Other: 14% */}
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15.9155"
-                  fill="none"
-                  stroke="#64748b"
-                  strokeWidth="4"
-                  strokeDasharray="14 86"
-                  strokeDashoffset="-86"
-                />
-              </svg>
-              <div className="absolute text-center">
-                <div className="text-xs font-black text-gray-900 leading-none">
-                  {formatCurrency(totalHubExpenses)}
+        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between relative">
+          <div>
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <div>
+                <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Revenue vs Expense vs Profit</span>
                 </div>
-                <div className="text-[9px] text-gray-400 font-medium mt-0.5">Total Expense</div>
+                <div className="text-[10px] text-gray-400 font-medium">
+                  {selectedMonthFilter} {isAllCycles ? '' : `• ${selectedCycleFilter}`}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-bold">
+                <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/70">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Revenue
+                </span>
+                <span className="flex items-center gap-1 text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100/70">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Expense
+                </span>
+                <span className="flex items-center gap-1 text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/70">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Profit
+                </span>
               </div>
             </div>
 
-            {/* Legend list */}
-            <div className="space-y-1 text-[11px] flex-1">
-              {expenseCategories.map((c) => (
-                <div key={c.name} className="flex items-center justify-between text-gray-600">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                    <span>{c.name}</span>
-                  </span>
-                  <span className="text-gray-400 font-medium text-[10px]">{c.percent}%</span>
-                  <strong className="text-gray-900 font-semibold">{formatCurrency(c.amount)}</strong>
-                </div>
-              ))}
+            {/* Bar Chart with interactive hover & guide grid */}
+            <div className="h-48 flex items-end justify-between gap-2 pt-6 relative select-none">
+              {/* Horizontal Grid Guide Lines */}
+              <div className="absolute inset-x-0 bottom-6 top-6 flex flex-col justify-between pointer-events-none pl-12 pr-1 z-0">
+                <div className="border-b border-dashed border-slate-100 w-full" />
+                <div className="border-b border-dashed border-slate-100 w-full" />
+                <div className="border-b border-dashed border-slate-100 w-full" />
+                <div className="border-b border-slate-200/90 w-full" />
+              </div>
+
+              {/* Left Y-axis values */}
+              <div className="flex flex-col justify-between h-36 text-[9px] text-gray-400 font-bold shrink-0 pr-2 pb-6 z-10">
+                <span>{formatCurrency(chartMaxVal)}</span>
+                <span>{formatCurrency(Math.round(chartMaxVal * 0.66))}</span>
+                <span>{formatCurrency(Math.round(chartMaxVal * 0.33))}</span>
+                <span>₹0</span>
+              </div>
+
+              {/* Bars container */}
+              <div className="flex-1 flex items-end justify-around h-36 border-b border-slate-200/90 pb-0.5 z-10">
+                {franchisePerformance.map((f, idx) => {
+                  const isHovered = hoveredBarIndex === idx;
+                  const isAnyHovered = hoveredBarIndex !== null;
+                  const expTotal = f.payout + f.hubExpense;
+
+                  // Compute bar heights with a visual minimum when > 0
+                  const revH = f.income > 0 ? Math.max(6, Math.min(100, Math.round((f.income / chartMaxVal) * 100))) : 0;
+                  const expH = expTotal > 0 ? Math.max(6, Math.min(100, Math.round((expTotal / chartMaxVal) * 100))) : 0;
+                  const profVal = Math.max(0, f.netProfit);
+                  const profH = profVal > 0 ? Math.max(6, Math.min(100, Math.round((profVal / chartMaxVal) * 100))) : 0;
+
+                  return (
+                    <div
+                      key={f.companyId}
+                      onMouseEnter={() => setHoveredBarIndex(idx)}
+                      onMouseLeave={() => setHoveredBarIndex(null)}
+                      className={`relative flex flex-col items-center justify-end h-full px-2 py-1 rounded-xl transition-all duration-200 cursor-pointer ${
+                        isHovered ? 'bg-slate-100/90 shadow-2xs' : 'hover:bg-slate-50/70'
+                      } ${isAnyHovered && !isHovered ? 'opacity-40' : 'opacity-100'}`}
+                    >
+                      {/* Floating Rich Tooltip */}
+                      {isHovered && (
+                        <div className="absolute bottom-[104%] left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-3 shadow-2xl border border-slate-700/80 min-w-[210px] pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+                          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-800">
+                            <span className="font-bold text-xs text-white tracking-wide">{f.name}</span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                              {selectedMonthFilter || 'Overview'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5 text-[11px]">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="flex items-center gap-1.5 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                                Revenue:
+                              </span>
+                              <strong className="text-emerald-400 font-bold">{formatCurrency(f.income)}</strong>
+                            </div>
+
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="flex items-center gap-1.5 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+                                Expense:
+                              </span>
+                              <strong className="text-rose-400 font-bold">{formatCurrency(expTotal)}</strong>
+                            </div>
+
+                            {/* Sub-breakdown for Expense */}
+                            {(f.payout > 0 || f.hubExpense > 0) && (
+                              <div className="pl-3.5 pr-0.5 text-[10px] text-slate-400 space-y-0.5 pb-0.5">
+                                <div className="flex justify-between">
+                                  <span>• Rider Payout:</span>
+                                  <span className="text-slate-300 font-medium">{formatCurrency(f.payout)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>• Hub Expense:</span>
+                                  <span className="text-slate-300 font-medium">{formatCurrency(f.hubExpense)}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-1.5 border-t border-slate-800">
+                              <span className="flex items-center gap-1.5 font-bold text-slate-200">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${f.netProfit >= 0 ? 'bg-blue-400' : 'bg-rose-500'}`} />
+                                Net Profit:
+                              </span>
+                              <strong className={`font-black ${f.netProfit >= 0 ? 'text-blue-300' : 'text-rose-400'}`}>
+                                {formatCurrency(f.netProfit)}
+                              </strong>
+                            </div>
+
+                            {f.income > 0 && (
+                              <div className="text-[10px] text-right font-medium text-slate-400 pt-0.5">
+                                Margin: <span className={f.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-400'}>{((f.netProfit / f.income) * 100).toFixed(1)}%</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Pointer caret */}
+                          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-r border-b border-slate-700/80 rotate-45" />
+                        </div>
+                      )}
+
+                      {/* 3 Pillars (Revenue, Expense, Profit) */}
+                      <div className="flex items-end gap-1.5 h-28 pb-0.5 relative z-10">
+                        {/* Revenue Bar */}
+                        <div className="flex flex-col items-center justify-end h-full w-3.5">
+                          {revH > 0 ? (
+                            <div
+                              style={{ height: `${revH}%` }}
+                              className="w-full bg-gradient-to-t from-emerald-600 via-emerald-500 to-emerald-400 rounded-t-md shadow-[0_2px_8px_rgba(16,185,129,0.3)] transition-all duration-300 group-hover:brightness-110"
+                            />
+                          ) : (
+                            <div className="w-full h-1 bg-slate-200 rounded-full" title="Revenue: ₹0" />
+                          )}
+                        </div>
+
+                        {/* Expense Bar */}
+                        <div className="flex flex-col items-center justify-end h-full w-3.5">
+                          {expH > 0 ? (
+                            <div
+                              style={{ height: `${expH}%` }}
+                              className="w-full bg-gradient-to-t from-rose-600 via-rose-500 to-rose-400 rounded-t-md shadow-[0_2px_8px_rgba(244,63,94,0.3)] transition-all duration-300 group-hover:brightness-110"
+                            />
+                          ) : (
+                            <div className="w-full h-1 bg-slate-200 rounded-full" title="Expense: ₹0" />
+                          )}
+                        </div>
+
+                        {/* Profit Bar */}
+                        <div className="flex flex-col items-center justify-end h-full w-3.5">
+                          {profH > 0 ? (
+                            <div
+                              style={{ height: `${profH}%` }}
+                              className="w-full bg-gradient-to-t from-blue-600 via-blue-500 to-indigo-400 rounded-t-md shadow-[0_2px_8px_rgba(59,130,246,0.3)] transition-all duration-300 group-hover:brightness-110"
+                            />
+                          ) : (
+                            <div className="w-full h-1 bg-slate-200 rounded-full" title={`Profit: ${formatCurrency(f.netProfit)}`} />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Label */}
+                      <span className="text-[10px] font-bold text-gray-700 truncate max-w-[65px] text-center mt-1 group-hover:text-indigo-600 transition-colors">
+                        {f.name}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+          </div>
+
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-gray-400">
+            <span>Hover on any company to inspect live figures</span>
+            <span className="font-semibold text-gray-500">{franchisePerformance.length} Franchises</span>
+          </div>
+        </div>
+
+        {/* 2. Donut Chart: Expense Breakdown (Dynamic from Hub Expenses) */}
+        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between relative">
+          <div>
+            <div className="flex items-center justify-between gap-1 mb-2">
+              <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                <PieChart className="w-3.5 h-3.5 text-amber-500" />
+                <span>Expense Breakdown</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                {filteredHubExpenses.length} Entries
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              {/* Donut graphic with interactive hover highlight */}
+              <div className="relative w-32 h-32 flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                  <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#f1f5f9" strokeWidth="4" />
+                  {(() => {
+                    let accumulated = 0;
+                    return expenseCategories.map((c) => {
+                      const offset = -accumulated;
+                      accumulated += c.percent;
+                      const isHovered = hoveredCategory === c.name;
+                      return (
+                        <circle
+                          key={c.name}
+                          cx="18"
+                          cy="18"
+                          r="15.9155"
+                          fill="none"
+                          stroke={c.color}
+                          strokeWidth={isHovered ? 5.5 : 4}
+                          strokeDasharray={`${c.percent} ${100 - c.percent}`}
+                          strokeDashoffset={offset}
+                          className="transition-all duration-200 cursor-pointer"
+                          style={{
+                            filter: isHovered ? `drop-shadow(0 0 4px ${c.color}aa)` : 'none',
+                          }}
+                          onMouseEnter={() => setHoveredCategory(c.name)}
+                          onMouseLeave={() => setHoveredCategory(null)}
+                        />
+                      );
+                    });
+                  })()}
+                </svg>
+
+                {/* Center text showing active hovered category OR total */}
+                <div className="absolute text-center max-w-[85px] pointer-events-none transition-all duration-200">
+                  {activeExpenseCategory ? (
+                    <div className="animate-in fade-in zoom-in-95 duration-150">
+                      <div className="text-[9px] font-bold text-gray-400 truncate leading-tight">
+                        {activeExpenseCategory.name}
+                      </div>
+                      <div
+                        className="text-xs font-black leading-tight mt-0.5"
+                        style={{ color: activeExpenseCategory.color }}
+                      >
+                        {formatCurrency(activeExpenseCategory.amount)}
+                      </div>
+                      <div className="text-[9px] font-bold text-gray-500 mt-0.5">
+                        {activeExpenseCategory.percent}%
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-xs font-black text-gray-900 leading-tight">
+                        {formatCurrency(totalHubExpenses)}
+                      </div>
+                      <div className="text-[9px] text-gray-400 font-medium mt-0.5 leading-tight">
+                        Total Expense
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Legend list */}
+              <div className="space-y-1.5 text-[11px] flex-1 max-h-36 overflow-y-auto pr-0.5">
+                {expenseCategories.length === 0 ? (
+                  <div className="py-2 text-center flex flex-col items-center justify-center">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-1.5">
+                      <Receipt className="w-4 h-4" />
+                    </div>
+                    <div className="text-[11px] font-bold text-gray-600">No Expenses Recorded</div>
+                    <div className="text-[10px] text-gray-400">Zero hub entries for this period</div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/hub-expenses')}
+                      className="mt-2 text-[10px] font-bold text-amber-600 hover:text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> Add Expense
+                    </button>
+                  </div>
+                ) : (
+                  expenseCategories.map((c) => {
+                    const isHovered = hoveredCategory === c.name;
+                    return (
+                      <div
+                        key={c.name}
+                        onMouseEnter={() => setHoveredCategory(c.name)}
+                        onMouseLeave={() => setHoveredCategory(null)}
+                        className={`flex items-center justify-between p-1.5 rounded-lg transition-all cursor-pointer ${
+                          isHovered ? 'bg-slate-100/90 shadow-2xs' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 truncate max-w-[85px]">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0 transition-transform"
+                            style={{
+                              backgroundColor: c.color,
+                              transform: isHovered ? 'scale(1.3)' : 'scale(1)',
+                            }}
+                          />
+                          <span className={`truncate font-medium ${isHovered ? 'text-gray-900 font-bold' : 'text-gray-600'}`}>
+                            {c.name}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                          <span className="text-[10px] font-semibold text-gray-400">{c.percent}%</span>
+                          <strong className="text-gray-900 font-bold">{formatCurrency(c.amount)}</strong>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+            <span className="text-gray-400">Hub & Operations</span>
+            <button
+              type="button"
+              onClick={() => navigate('/hub-expenses')}
+              className="text-amber-600 hover:underline font-bold cursor-pointer"
+            >
+              View Expenses →
+            </button>
           </div>
         </div>
 
         {/* 3. Franchise-wise Shipment Summary Table */}
-        <div className="lg:col-span-4 bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold text-gray-900">Franchise-wise Shipment Summary</div>
             <button
               type="button"
-              onClick={() => navigate('/reports')}
+              onClick={() => navigate('/payout-details')}
               className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer"
             >
               View All <ChevronRight className="w-3 h-3" />
@@ -989,8 +1277,6 @@ export const Dashboard = () => {
                   <th className="pb-1.5">Franchise</th>
                   <th className="pb-1.5 text-right">Total</th>
                   <th className="pb-1.5 text-right">Delivered</th>
-                  <th className="pb-1.5 text-right">RTO</th>
-                  <th className="pb-1.5 text-right">ODA</th>
                   <th className="pb-1.5 text-right">Pending</th>
                 </tr>
               </thead>
@@ -1000,19 +1286,17 @@ export const Dashboard = () => {
                     <td className="py-1.5 font-bold text-gray-800">{r.name}</td>
                     <td className="py-1.5 text-right font-medium text-gray-700">{formatNumber(r.total)}</td>
                     <td className="py-1.5 text-right font-medium text-gray-700">{formatNumber(r.delivered)}</td>
-                    <td className="py-1.5 text-right font-medium text-gray-700">{formatNumber(r.rto)}</td>
-                    <td className="py-1.5 text-right font-medium text-gray-700">{formatNumber(r.oda)}</td>
                     <td className="py-1.5 text-right font-medium text-gray-700">{formatNumber(r.pending)}</td>
                   </tr>
                 ))}
-                <tr className="font-extrabold text-gray-900 border-t border-gray-200">
-                  <td className="py-2">Total</td>
-                  <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.total)}</td>
-                  <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.delivered)}</td>
-                  <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.rto)}</td>
-                  <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.oda)}</td>
-                  <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.pending)}</td>
-                </tr>
+                {isAllCompanies && (
+                  <tr className="font-extrabold text-gray-900 border-t border-gray-200">
+                    <td className="py-2">Total</td>
+                    <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.total)}</td>
+                    <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.delivered)}</td>
+                    <td className="py-2 text-right">{formatNumber(shipmentSummary.totals.pending)}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1022,195 +1306,200 @@ export const Dashboard = () => {
       {/* 5. ROW 4: BOTTOM 4 SUMMARY CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Rider Payout Summary */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+        <div className="group relative overflow-hidden bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.08)] transition-all duration-300 flex flex-col justify-between">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-slate-600 to-indigo-600" />
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-gray-700" />
-                <span className="text-xs font-bold text-gray-900">Rider Payout Summary</span>
+                <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-800 leading-tight block">Rider Payout Summary</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Monthly Payout Breakdown</span>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate('/payout-details')}
-                className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100"
               >
                 View All
               </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Total Payable</div>
-                <div className="text-xs font-black text-gray-900 mt-1">{formatCurrency(totalRiderPayout)}</div>
+              <div className="bg-slate-50 border border-slate-100/80 p-2.5 rounded-xl">
+                <div className="text-[10px] text-slate-400 font-medium">Total</div>
+                <div className="text-xs font-black text-slate-900 mt-1">{formatCurrency(totalRiderPayout)}</div>
               </div>
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Paid</div>
-                <div className="text-xs font-black text-gray-900 mt-1">₹ 0</div>
+              <div className="bg-emerald-50/50 border border-emerald-100/70 p-2.5 rounded-xl">
+                <div className="text-[10px] text-emerald-600 font-medium">Paid</div>
+                <div className="text-xs font-black text-emerald-700 mt-1">{formatCurrency(riderStats.paidAmount)}</div>
               </div>
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Pending</div>
-                <div className="text-xs font-black text-rose-600 mt-1">{formatCurrency(totalRiderPayout)}</div>
+              <div className="bg-rose-50/50 border border-rose-100/70 p-2.5 rounded-xl">
+                <div className="text-[10px] text-rose-500 font-medium">Pending</div>
+                <div className="text-xs font-black text-rose-600 mt-1">{formatCurrency(riderStats.pendingAmount)}</div>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-center gap-2 text-[10px] font-bold text-gray-600">
+          <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500">
             <span>{riderStats.total} Riders</span>
-            <span>|</span>
-            <span>{riderStats.paid} Paid</span>
-            <span>|</span>
-            <span>{riderStats.pending} Pending</span>
+            <span>•</span>
+            <span className="text-emerald-600">{riderStats.paid} Paid</span>
+            <span>•</span>
+            <span className="text-rose-500">{riderStats.pending} Pending</span>
           </div>
         </div>
 
         {/* Card 2: Advance Summary */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+        <div className="group relative overflow-hidden bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.08)] transition-all duration-300 flex flex-col justify-between">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-bold text-gray-900">Advance Summary</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100/60">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-800 leading-tight block">Advance Summary</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Rider Advances</span>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate('/advanced')}
-                className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                className="text-[10px] font-bold text-emerald-600 hover:underline cursor-pointer bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100"
               >
                 View All
               </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Given</div>
-                <div className="text-xs font-black text-gray-900 mt-1">{formatCurrency(totalAdvanceGiven)}</div>
+              <div className="bg-slate-50 border border-slate-100/80 p-2.5 rounded-xl">
+                <div className="text-[10px] text-slate-400 font-medium">Given</div>
+                <div className="text-xs font-black text-slate-900 mt-1">{formatCurrency(totalAdvanceGiven)}</div>
               </div>
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Recovered</div>
-                <div className="text-xs font-black text-gray-900 mt-1">{formatCurrency(totalAdvanceRecovered)}</div>
+              <div className="bg-emerald-50/50 border border-emerald-100/70 p-2.5 rounded-xl">
+                <div className="text-[10px] text-emerald-600 font-medium">Recovered</div>
+                <div className="text-xs font-black text-emerald-700 mt-1">{formatCurrency(totalAdvanceRecovered)}</div>
               </div>
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Outstanding</div>
-                <div className="text-xs font-black text-amber-600 mt-1">{formatCurrency(totalAdvanceOutstanding)}</div>
+              <div className="bg-amber-50/50 border border-amber-100/70 p-2.5 rounded-xl">
+                <div className="text-[10px] text-amber-600 font-medium">Outstanding</div>
+                <div className="text-xs font-black text-amber-700 mt-1">{formatCurrency(totalAdvanceOutstanding)}</div>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-center gap-2 text-[10px] font-bold text-gray-600">
-            <span>3 Riders</span>
-            <span>|</span>
-            <span>1 Recovered</span>
-            <span>|</span>
-            <span>2 Outstanding</span>
+          <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500">
+            <span>{advanceStats.total} Records</span>
+            <span>•</span>
+            <span className="text-emerald-600">{advanceStats.recovered} Recovered</span>
+            <span>•</span>
+            <span className="text-amber-600">{advanceStats.pending} Pending</span>
           </div>
         </div>
 
         {/* Card 3: Loss Summary */}
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+        <div className="group relative overflow-hidden bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.08)] transition-all duration-300 flex flex-col justify-between">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-pink-500" />
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                <span className="text-xs font-bold text-gray-900">Loss Summary</span>
+                <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100/60">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-800 leading-tight block">Loss Summary</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Incidents & Recoveries</span>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate('/loss-details')}
-                className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100"
               >
                 View All
               </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Total Loss</div>
-                <div className="text-xs font-black text-gray-900 mt-1">{formatCurrency(totalLoss)}</div>
+              <div className="bg-slate-50 border border-slate-100/80 p-2.5 rounded-xl">
+                <div className="text-[10px] text-slate-400 font-medium">Total Loss</div>
+                <div className="text-xs font-black text-slate-900 mt-1">{formatCurrency(totalLoss)}</div>
               </div>
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Recovered</div>
-                <div className="text-xs font-black text-gray-900 mt-1">₹ 0</div>
+              <div className="bg-emerald-50/50 border border-emerald-100/70 p-2.5 rounded-xl">
+                <div className="text-[10px] text-emerald-600 font-medium">Recovered</div>
+                <div className="text-xs font-black text-emerald-700 mt-1">{formatCurrency(recoveredLoss)}</div>
               </div>
-              <div>
-                <div className="text-[10px] text-gray-500 font-medium">Pending</div>
+              <div className="bg-rose-50/50 border border-rose-100/70 p-2.5 rounded-xl">
+                <div className="text-[10px] text-rose-500 font-medium">Pending</div>
                 <div className="text-xs font-black text-rose-600 mt-1">{formatCurrency(unrecoveredLoss)}</div>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-center gap-2 text-[10px] font-bold text-gray-600">
-            <span>2 Incidents</span>
-            <span>|</span>
-            <span>0 Recovered</span>
-            <span>|</span>
-            <span>2 Pending</span>
+          <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500">
+            <span>{lossStats.total} Incidents</span>
+            <span>•</span>
+            <span className="text-emerald-600">{lossStats.recovered} Recovered</span>
+            <span>•</span>
+            <span className="text-rose-500">{lossStats.pending} Pending</span>
           </div>
         </div>
 
-        {/* Card 4: Attention Required */}
-        <div className="bg-white border border-rose-100 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+        {/* Card 4: Attention Required (100% Dynamic) */}
+        <div className="group relative overflow-hidden bg-white border border-rose-200/80 rounded-2xl p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.08)] transition-all duration-300 flex flex-col justify-between">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-amber-500" />
           <div>
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
-                <Bell className="w-4 h-4 text-rose-600 fill-rose-100" />
-                <span>Attention Required</span>
+            <div className="flex items-center justify-between mb-3.5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100/60">
+                  <Bell className="w-4 h-4 fill-rose-100" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-800 leading-tight block">Attention Required</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Urgent Actions</span>
+                </div>
               </div>
-              <span className="px-1.5 py-0.2 rounded-md bg-rose-500 text-white text-[10px] font-bold">
-                4
+              <span
+                className={`px-2 py-0.5 rounded-full text-white text-[10px] font-extrabold ${
+                  attentionItems.length > 0 ? 'bg-rose-500 shadow-xs' : 'bg-emerald-500'
+                }`}
+              >
+                {attentionItems.length}
               </span>
             </div>
 
-            <div className="space-y-1.5 text-[11px]">
-              {/* Alert 1 */}
-              <div
-                onClick={() => navigate('/payout-details')}
-                className="p-1.5 rounded-lg hover:bg-rose-50/50 transition-colors cursor-pointer flex items-center justify-between text-gray-700"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-rose-500" />
-                  <span>27 Rider Payments Pending</span>
+            <div className="space-y-2 text-[11px]">
+              {attentionItems.length === 0 ? (
+                <div className="py-4 text-center text-emerald-600 flex flex-col items-center justify-center gap-1">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                  <span className="text-xs font-bold">All Good</span>
+                  <span className="text-[10px] text-slate-400">No urgent pending actions</span>
                 </div>
-                <div className="flex items-center gap-0.5 font-bold text-gray-900">
-                  <span>{formatCurrency(totalRiderPayout)}</span>
-                  <ChevronRight className="w-3 h-3 text-gray-400" />
-                </div>
-              </div>
-
-              {/* Alert 2 */}
-              <div
-                onClick={() => navigate('/advanced')}
-                className="p-1.5 rounded-lg hover:bg-amber-50/50 transition-colors cursor-pointer flex items-center justify-between text-gray-700"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Wallet className="w-3.5 h-3.5 text-amber-500" />
-                  <span>₹ 5,000 Advance Outstanding</span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-gray-400" />
-              </div>
-
-              {/* Alert 3 */}
-              <div
-                onClick={() => navigate('/loss-details')}
-                className="p-1.5 rounded-lg hover:bg-rose-50/50 transition-colors cursor-pointer flex items-center justify-between text-gray-700"
-              >
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                  <span>₹ 210 Loss Recovery Pending</span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-gray-400" />
-              </div>
-
-              {/* Alert 4 */}
-              <div
-                onClick={() => navigate('/hub-expenses')}
-                className="p-1.5 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-between text-gray-700"
-              >
-                <div className="flex items-center gap-1.5">
-                  <CreditCard className="w-3.5 h-3.5 text-gray-500" />
-                  <span>₹ 2,500 Other Expenses Pending</span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-gray-400" />
-              </div>
+              ) : (
+                attentionItems.slice(0, 4).map((item) => {
+                  const ItemIcon = item.icon;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => navigate(item.path)}
+                      className="p-2 rounded-xl bg-slate-50/70 hover:bg-rose-50/60 border border-slate-100/80 transition-colors cursor-pointer flex items-center justify-between text-slate-700"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ItemIcon className={`w-3.5 h-3.5 shrink-0 ${item.iconColor}`} />
+                        <span className="truncate font-medium">{item.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1 font-bold text-slate-900 shrink-0 ml-1">
+                        <span>{item.value}</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -1218,3 +1507,5 @@ export const Dashboard = () => {
     </div>
   );
 };
+
+
