@@ -34,6 +34,8 @@ export const Expenses = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rowToDelete, setRowToDelete] = useState(null);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [rows, setRows] = useState([]);
@@ -104,6 +106,43 @@ export const Expenses = () => {
     const start = (safePage - 1) * pageSize;
     return displayedRows.slice(start, start + pageSize);
   }, [displayedRows, safePage, pageSize]);
+
+  // Check if all rows on current page are selected
+  const allCurrentPageSelected = useMemo(() => {
+    if (paginatedRows.length === 0) return false;
+    return paginatedRows.every((r) => selectedRowIds.includes(r.id));
+  }, [paginatedRows, selectedRowIds]);
+
+  const handleHeaderSelectAll = () => {
+    const pageIds = paginatedRows.map((r) => r.id);
+    if (allCurrentPageSelected) {
+      setSelectedRowIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedRowIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleToggleRowSelect = (rowId) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(rowId) ? prev.filter((id) => id !== rowId) : [...prev, rowId]
+    );
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedRowIds.length === 0) return;
+    try {
+      const res = await apiClient.post(ENDPOINTS.HUB_EXPENSES.BULK_DELETE, { ids: selectedRowIds });
+      if (res.success) {
+        setRows((prev) => prev.filter((r) => !selectedRowIds.includes(r.id)));
+        toast.success(`Deleted ${selectedRowIds.length} expense records.`);
+        setSelectedRowIds([]);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete selected expenses');
+    } finally {
+      setIsBulkDeleteModalOpen(false);
+    }
+  };
 
   // Handle cell edit
   const handleCellChange = async (rowId, field, value) => {
@@ -419,11 +458,57 @@ export const Expenses = () => {
 
       {/* Table Container */}
       <div className="bg-white border border-gray-200/80 shadow-xs rounded-xl flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Bulk Action Bar */}
+        {selectedRowIds.length > 0 && (
+          <div className="bg-[#FFF1F2] border-b border-[#FECDD3] px-3.5 py-1.5 flex items-center justify-between gap-3 text-xs shrink-0 transition-all">
+            <div className="flex items-center gap-2 text-[#9F1239] font-bold">
+              <span>{selectedRowIds.length} expense record{selectedRowIds.length > 1 ? 's' : ''} selected</span>
+              {selectedRowIds.length < totalItems && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowIds(displayedRows.map((r) => r.id))}
+                  className="text-[11px] underline hover:text-[#881337] cursor-pointer ml-1 font-semibold"
+                >
+                  Select all {totalItems} rows across all pages
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRowIds([])}
+                className="px-2 py-0.5 rounded text-[11px] font-semibold text-gray-600 hover:bg-rose-100 cursor-pointer"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                disabled={!canEdit}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-[#E11D48] text-white hover:bg-[#BE123C] shadow-2xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedRowIds.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0 flex flex-col">
           <table className="w-full min-h-full text-left border-collapse text-xs flex-1">
             {/* Table Header */}
             <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
               <tr className="bg-[#F8FAFC] text-gray-900 font-bold border-b border-gray-200 select-none">
+                <th className="py-1.5 px-2 text-center w-8 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={allCurrentPageSelected && paginatedRows.length > 0}
+                    onChange={handleHeaderSelectAll}
+                    disabled={!canEdit || paginatedRows.length === 0}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:cursor-not-allowed accent-rose-600"
+                    title="Select All on this page"
+                  />
+                </th>
                 <th className="py-1.5 px-2.5 text-center text-gray-500 font-semibold w-10 whitespace-nowrap">#</th>
                 <th className="py-1.5 px-3 whitespace-nowrap">Expense Name</th>
                 <th className="py-1.5 px-3 text-right whitespace-nowrap">Amount</th>
@@ -437,7 +522,7 @@ export const Expenses = () => {
             <tbody className="divide-y divide-gray-100">
               {paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-gray-500">
+                  <td colSpan={7} className="py-12 text-center text-gray-500">
                     <div className="w-8 h-8 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center mx-auto mb-1.5">
                       <Inbox className="w-4 h-4" />
                     </div>
@@ -450,14 +535,26 @@ export const Expenses = () => {
               ) : (
                 paginatedRows.map((row, index) => {
                   const actualIndex = (safePage - 1) * pageSize + index + 1;
+                  const isSelected = selectedRowIds.includes(row.id);
 
                   return (
                     <tr
                       key={row.id || index}
-                      className="h-11 hover:bg-gray-50/80 transition-colors bg-white"
+                      className={`h-9.5 hover:bg-gray-50/80 transition-colors ${isSelected ? 'bg-rose-50/40' : 'bg-white'}`}
                     >
+                      {/* Checkbox */}
+                      <td className="py-1 px-2 text-center whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleRowSelect(row.id)}
+                          disabled={!canEdit}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:cursor-not-allowed accent-rose-600"
+                        />
+                      </td>
+
                       {/* Row Index */}
-                      <td className="py-2 px-2.5 text-center text-gray-400 font-mono text-xs whitespace-nowrap">
+                      <td className="py-1.5 px-2.5 text-center text-gray-400 font-mono text-xs whitespace-nowrap">
                         {actualIndex}
                       </td>
 
@@ -469,7 +566,7 @@ export const Expenses = () => {
                           disabled={!canEdit}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'expenseName', e.target.value)}
-                          className="w-full px-2.5 py-1 text-xs font-semibold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
+                          className="w-full px-2 py-0.5 text-xs font-semibold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                           placeholder="Expense Name / Description"
                         />
                       </td>
@@ -484,7 +581,7 @@ export const Expenses = () => {
                             disabled={!canEdit}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'amount', e.target.value)}
-                            className="w-24 px-2.5 py-1 text-xs text-right font-bold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
+                            className="w-24 px-2 py-0.5 text-xs text-right font-bold text-gray-900 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                             placeholder="0"
                           />
                         </div>
@@ -497,7 +594,7 @@ export const Expenses = () => {
                           value={row.date || ''}
                           disabled={!canEdit}
                           onChange={(e) => handleCellChange(row.id, 'date', e.target.value)}
-                          className="w-36 px-2.5 py-1 text-xs font-medium text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all cursor-pointer"
+                          className="w-36 px-2 py-0.5 text-xs font-medium text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all cursor-pointer"
                         />
                       </td>
 
@@ -509,7 +606,7 @@ export const Expenses = () => {
                           disabled={!canEdit}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'remark', e.target.value)}
-                          className="w-full min-w-[150px] px-2.5 py-1 text-xs font-medium text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
+                          className="w-full min-w-[150px] px-2 py-0.5 text-xs font-medium text-gray-800 rounded-md bg-transparent hover:bg-gray-50 focus:bg-white border border-transparent focus:border-primary-500 focus:ring-1 focus:ring-primary-100 outline-none transition-all"
                           placeholder="Enter remark"
                         />
                       </td>
@@ -533,7 +630,7 @@ export const Expenses = () => {
               {/* Spacer row only when rows < pageSize to absorb space cleanly */}
               {paginatedRows.length > 0 && paginatedRows.length < pageSize && (
                 <tr className="h-full border-none pointer-events-none">
-                  <td colSpan={6} className="p-0 border-none bg-transparent"></td>
+                  <td colSpan={7} className="p-0 border-none bg-transparent"></td>
                 </tr>
               )}
             </tbody>
@@ -542,6 +639,7 @@ export const Expenses = () => {
             {displayedRows.length > 0 && (
               <tfoot className="sticky bottom-0 z-10 bg-[#F8FAFC]">
                 <tr className="bg-[#F8FAFC] font-bold text-gray-900 border-t border-gray-200 select-none">
+                  <td className="py-1.5 px-2"></td>
                   <td className="py-1.5 px-2.5 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">
                     SUM
                   </td>
@@ -578,7 +676,7 @@ export const Expenses = () => {
         />
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Single Confirmation Modal */}
       <ConfirmationModal
         isOpen={!!rowToDelete}
         onClose={() => setRowToDelete(null)}
@@ -586,6 +684,17 @@ export const Expenses = () => {
         title="Delete Expense Record"
         message={`Are you sure you want to delete "${rowToDelete?.expenseName || 'this expense'}"? This action cannot be undone.`}
         confirmLabel="Yes, Delete"
+        variant="danger"
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Selected Expenses"
+        message={`Are you sure you want to delete ${selectedRowIds.length} selected expense records? This action cannot be undone.`}
+        confirmLabel={`Yes, Delete ${selectedRowIds.length} Records`}
         variant="danger"
       />
 

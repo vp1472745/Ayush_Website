@@ -129,6 +129,20 @@ export const CompanyProvider = ({ children }) => {
     }
   };
 
+  const bulkDeleteCompanies = async (ids) => {
+    try {
+      const res = await apiClient.post(ENDPOINTS.COMPANIES.BULK_DELETE, { ids });
+      if (res.success) {
+        setCompanies((prev) => prev.filter((c) => !ids.includes(c.id) && !ids.includes(c._id)));
+        toast.success(`Deleted ${ids.length} companies successfully.`);
+        return true;
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to bulk delete companies');
+      return false;
+    }
+  };
+
   return (
     <CompanyContext.Provider
       value={{
@@ -147,6 +161,7 @@ export const CompanyProvider = ({ children }) => {
         updateCompany,
         toggleCompanyStatus,
         deleteCompany,
+        bulkDeleteCompanies,
       }}
     >
       {children}

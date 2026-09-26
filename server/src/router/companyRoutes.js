@@ -5,6 +5,7 @@ import {
   updateCompany,
   toggleCompanyStatus,
   deleteCompany,
+  bulkDeleteCompanies,
 } from '../controller/companyController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -15,6 +16,8 @@ router.use(protect); // All company routes protected
 router.route('/')
   .get(getCompanies)
   .post(createCompany);
+
+router.post('/bulk-delete', bulkDeleteCompanies);
 
 router.route('/:id')
   .put(updateCompany)

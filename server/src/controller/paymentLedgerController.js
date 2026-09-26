@@ -126,3 +126,49 @@ export const createPayment = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Delete single payment ledger record
+// @route   DELETE /api/payments/:id
+// @access  Private
+export const deletePayment = async (req, res, next) => {
+  try {
+    const payment = await PaymentLedger.findById(req.params.id);
+    if (!payment) {
+      res.status(404);
+      throw new Error('Payment record not found.');
+    }
+
+    await PaymentLedger.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: 'Payment record deleted successfully',
+      data: { id: req.params.id },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Bulk delete payment ledger records
+// @route   POST /api/payments/bulk-delete
+// @access  Private
+export const bulkDeletePayments = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400);
+      throw new Error('Array of payment IDs is required.');
+    }
+
+    const result = await PaymentLedger.deleteMany({ _id: { $in: ids } });
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${result.deletedCount} payment records.`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

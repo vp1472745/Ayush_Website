@@ -622,27 +622,63 @@ export const Advanced = () => {
           </div>
         </div>
 
+        {/* Bulk Action Bar */}
+        {selectedRowIds.length > 0 && (
+          <div className="bg-[#FFF1F2] border-b border-[#FECDD3] px-3.5 py-1.5 flex items-center justify-between gap-3 text-xs shrink-0 transition-all">
+            <div className="flex items-center gap-2 text-[#9F1239] font-bold">
+              <span>{selectedRowIds.length} advance record{selectedRowIds.length > 1 ? 's' : ''} selected</span>
+              {selectedRowIds.length < totalItems && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowIds(displayedRows.map((r) => r.id))}
+                  className="text-[11px] underline hover:text-[#881337] cursor-pointer ml-1 font-semibold"
+                >
+                  Select all {totalItems} rows across all pages
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRowIds([])}
+                className="px-2 py-0.5 rounded text-[11px] font-semibold text-gray-600 hover:bg-rose-100 cursor-pointer"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                disabled={!canEdit}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-[#E11D48] text-white hover:bg-[#BE123C] shadow-2xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedRowIds.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Advance Table */}
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
               <tr className="bg-[#F8FAFC] border-b border-gray-200/80 text-[11px] font-semibold text-gray-500 uppercase tracking-wider select-none">
-                <th className="py-3.5 px-4 w-10 text-center">
+                <th className="py-2 px-3 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={allCurrentPageSelected}
                     onChange={handleHeaderSelectAll}
-                    className="w-4 h-4 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
+                    className="w-3.5 h-3.5 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
                   />
                 </th>
-                <th className="py-3.5 px-4 min-w-[130px]">Date</th>
-                <th className="py-3.5 px-4 min-w-[170px]">Rider Name</th>
-                <th className="py-3.5 px-4 min-w-[120px]">Rider ID</th>
-                <th className="py-3.5 px-4 min-w-[130px]">Advance (₹)</th>
-                <th className="py-3.5 px-4 min-w-[130px]">Advance Cut (₹)</th>
-                <th className="py-3.5 px-4 min-w-[150px]">Remaining Amount (₹)</th>
-                <th className="py-3.5 px-4 min-w-[200px]">Remark</th>
-                <th className="py-3.5 px-4 w-16 text-center">Action</th>
+                <th className="py-2 px-3 min-w-[130px]">Date</th>
+                <th className="py-2 px-3 min-w-[170px]">Rider Name</th>
+                <th className="py-2 px-3 min-w-[120px]">Rider ID</th>
+                <th className="py-2 px-3 min-w-[130px]">Advance (₹)</th>
+                <th className="py-2 px-3 min-w-[130px]">Advance Cut (₹)</th>
+                <th className="py-2 px-3 min-w-[150px]">Remaining Amount (₹)</th>
+                <th className="py-2 px-3 min-w-[200px]">Remark</th>
+                <th className="py-2 px-3 w-16 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
@@ -676,28 +712,28 @@ export const Advanced = () => {
                       className={`hover:bg-gray-50/70 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}
                     >
                       {/* Checkbox */}
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-1.5 px-3 text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleRow(row.id)}
-                          className="w-4 h-4 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
+                          className="w-3.5 h-3.5 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
                         />
                       </td>
 
                       {/* Date */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <input
                           type="date"
                           value={row.date?.slice(0, 10) || ''}
                           disabled={!canEdit}
                           onChange={(e) => handleCellChange(row.id, 'date', e.target.value)}
-                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs text-gray-900 focus:outline-none transition-all cursor-pointer"
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-0.5 text-xs text-gray-900 focus:outline-none transition-all cursor-pointer"
                         />
                       </td>
 
                       {/* Rider Name */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <input
                           type="text"
                           value={row.riderName || ''}
@@ -705,12 +741,12 @@ export const Advanced = () => {
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'riderName', e.target.value)}
                           placeholder="Rider Name"
-                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs font-semibold text-gray-900 focus:outline-none transition-all"
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-0.5 text-xs font-semibold text-gray-900 focus:outline-none transition-all"
                         />
                       </td>
 
                       {/* Rider ID */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <input
                           type="text"
                           value={row.riderId || ''}
@@ -718,12 +754,12 @@ export const Advanced = () => {
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'riderId', e.target.value)}
                           placeholder="e.g. 123456"
-                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs font-mono font-medium text-gray-700 focus:outline-none transition-all"
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-0.5 text-xs font-mono font-medium text-gray-700 focus:outline-none transition-all"
                         />
                       </td>
 
                       {/* Advance Amount */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
                           <input
@@ -735,13 +771,13 @@ export const Advanced = () => {
                             placeholder="0"
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'advance', e.target.value)}
-                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-gray-900 focus:outline-none transition-all"
+                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-0.5 text-xs font-bold text-gray-900 focus:outline-none transition-all"
                           />
                         </div>
                       </td>
 
                       {/* Advance Cut */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-500 text-xs">₹</span>
                           <input
@@ -753,14 +789,14 @@ export const Advanced = () => {
                             placeholder="0"
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'advanceCut', e.target.value)}
-                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-emerald-700 focus:outline-none transition-all"
+                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-0.5 text-xs font-bold text-emerald-700 focus:outline-none transition-all"
                           />
                         </div>
                       </td>
 
                       {/* Remaining Amount */}
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black ${
+                      <td className="py-1.5 px-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-black ${
                           remAmt > 0 ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         }`}>
                           ₹{remAmt.toLocaleString('en-IN')}
@@ -768,7 +804,7 @@ export const Advanced = () => {
                       </td>
 
                       {/* Remarks */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <input
                           type="text"
                           value={row.remark || ''}
@@ -776,12 +812,12 @@ export const Advanced = () => {
                           onFocus={(e) => e.target.select()}
                           placeholder="e.g. payout cycle cut note..."
                           onChange={(e) => handleCellChange(row.id, 'remark', e.target.value)}
-                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none transition-all"
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-0.5 text-xs text-gray-700 focus:outline-none transition-all"
                         />
                       </td>
 
                       {/* Action */}
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-1.5 px-3 text-center">
                         <button
                           type="button"
                           onClick={() => {

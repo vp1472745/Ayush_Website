@@ -241,3 +241,27 @@ export const deleteCompany = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Bulk delete companies
+// @route   POST /api/companies/bulk-delete
+// @access  Private
+export const bulkDeleteCompanies = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400);
+      throw new Error('Please provide an array of company IDs to delete.');
+    }
+
+    const result = await Company.deleteMany({ _id: { $in: ids } });
+
+    res.json({
+      success: true,
+      message: `Deleted ${result.deletedCount} company records successfully`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

@@ -173,35 +173,65 @@ export const Reports = () => {
     return myPayments.reduce((acc, row) => acc + (Number(row.amount) || Number(row.finalPayable) || 0), 0);
   }, [myPayments]);
 
+  // Check if selected company is Valmo
+  const isValmoSelected = useMemo(() => {
+    if (!selectedCompanyFilter || selectedCompanyFilter === 'all') return false;
+    const comp = activeCompanies.find((c) => String(c.id || c._id) === String(selectedCompanyFilter));
+    return (comp?.name || '').toLowerCase().includes('valmo') || (comp?.sheetType || '').toLowerCase() === 'valmo';
+  }, [selectedCompanyFilter, activeCompanies]);
+
   // 2. Total Rider Payout Cost (₹ from RiderPayout)
+  // For Valmo, riders pay the hub, so rider payout cost is 0.
   const totalRiderPayout = useMemo(() => {
-    return riderPayouts.reduce((acc, row) => acc + (Number(row.finalPayout) || Number(row.payout) || 0), 0);
-  }, [riderPayouts]);
+    if (isValmoSelected) return 0;
+    return riderPayouts.reduce((acc, row) => {
+      const compName = (row.companyId?.name || '').toLowerCase();
+      const sheetType = (row.companyId?.sheetType || '').toLowerCase();
+      if (compName.includes('valmo') || sheetType === 'valmo') return acc;
+      return acc + (Number(row.finalPayout) || Number(row.payout) || 0);
+    }, 0);
+  }, [riderPayouts, isValmoSelected]);
 
-  // 3. Total Hub Operating Expenses (₹ from HubExpense)
+  // 3. Total Hub Operating Expenses (₹ from HubExpense) - allocated per company when filtered
   const totalHubExpenses = useMemo(() => {
-    return hubExpenses.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
-  }, [hubExpenses]);
+    if (!selectedCompanyFilter || selectedCompanyFilter === 'all') {
+      return hubExpenses.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+    }
+    const numCompanies = activeCompanies.length || 1;
+    const direct = hubExpenses
+      .filter((e) => (e.companyId?._id || e.companyId?.id || e.companyId) === selectedCompanyFilter)
+      .reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+    const shared = hubExpenses
+      .filter((e) => !e.companyId)
+      .reduce((acc, row) => acc + (Number(row.amount) || 0), 0) / numCompanies;
+    return direct + Math.round(shared);
+  }, [hubExpenses, selectedCompanyFilter, activeCompanies]);
 
-  // 4. Total Loss & Recovery (₹ from LossDetail)
+  // 4. Total Loss & Recovery (₹ from LossDetail) - proportional allocation when filtered
   const lossMetrics = useMemo(() => {
-    let totalLoss = 0;
-    let recoveredLoss = 0;
-    let unrecoveredLoss = 0;
+    let rawTotalLoss = 0;
+    let rawRecoveredLoss = 0;
+    let rawUnrecoveredLoss = 0;
 
     lossDetails.forEach((row) => {
       const price = Number(row.price) || 0;
-      totalLoss += price;
+      rawTotalLoss += price;
       if (row.status === 'Recovered') {
-        recoveredLoss += price;
+        rawRecoveredLoss += price;
       } else {
-        unrecoveredLoss += price;
+        rawUnrecoveredLoss += price;
       }
     });
 
+    const isAll = !selectedCompanyFilter || selectedCompanyFilter === 'all';
+    const numCompanies = activeCompanies.length || 1;
+
+    const totalLoss = isAll ? rawTotalLoss : Math.round(rawTotalLoss / numCompanies);
+    const recoveredLoss = isAll ? rawRecoveredLoss : Math.round(rawRecoveredLoss / numCompanies);
+    const unrecoveredLoss = isAll ? rawUnrecoveredLoss : Math.round(rawUnrecoveredLoss / numCompanies);
     const recoveryRate = totalLoss > 0 ? (recoveredLoss / totalLoss) * 100 : 100;
-    return { totalLoss, recoveredLoss, unrecoveredLoss, recoveryRate };
-  }, [lossDetails]);
+    return { totalLoss, recoveredLoss, unrecoveredLoss, recoveryRate, rawTotalLoss, rawUnrecoveredLoss };
+  }, [lossDetails, selectedCompanyFilter, activeCompanies]);
 
   // 5. Total Advances (₹ from Advance)
   const advanceMetrics = useMemo(() => {
@@ -258,38 +288,72 @@ export const Reports = () => {
 
     riderPayouts.forEach((r) => {
       const m = r.month || selectedMonthFilter;
+      const compName = (r.companyId?.name || '').toLowerCase();
+      const sheetType = (r.companyId?.sheetType || '').toLowerCase();
+      const isVal = compName.includes('valmo') || sheetType === 'valmo' || isValmoSelected;
       if (monthMap[m]) {
-        monthMap[m].riderPayout += Number(r.finalPayout) || Number(r.payout) || 0;
+        if (!isVal) {
+          monthMap[m].riderPayout += Number(r.finalPayout) || Number(r.payout) || 0;
+        }
         monthMap[m].deliveries += Number(r.deliveredPickupTotal) || Number(r.delivered) || 0;
       }
     });
 
+    const isCompanyFiltered = Boolean(selectedCompanyFilter && selectedCompanyFilter !== 'all');
+    const numCompanies = activeCompanies.length || 1;
+
     hubExpenses.forEach((e) => {
       const m = e.month || selectedMonthFilter;
       if (monthMap[m]) {
-        monthMap[m].hubExpense += Number(e.amount) || 0;
+        const amt = Number(e.amount) || 0;
+        if (!isCompanyFiltered) {
+          monthMap[m].hubExpense += amt;
+        } else {
+          const compId = e.companyId?._id || e.companyId?.id || e.companyId;
+          if (compId === selectedCompanyFilter) {
+            monthMap[m].hubExpense += amt;
+          } else if (!compId) {
+            // Shared hub operational expense allocated equally across active companies
+            monthMap[m].hubExpense += amt / numCompanies;
+          }
+        }
       }
     });
 
     lossDetails.forEach((l) => {
       const m = l.month || selectedMonthFilter;
       if (monthMap[m] && l.status !== 'Recovered') {
-        monthMap[m].losses += Number(l.price) || 0;
+        const price = Number(l.price) || 0;
+        if (!isCompanyFiltered) {
+          monthMap[m].losses += price;
+        } else {
+          const compId = l.companyId?._id || l.companyId?.id || l.companyId;
+          if (compId === selectedCompanyFilter) {
+            monthMap[m].losses += price;
+          } else if (!compId) {
+            // Shared loss allocated equally across active companies
+            monthMap[m].losses += price / numCompanies;
+          }
+        }
       }
     });
 
     return MONTHS.map((m) => {
       const row = monthMap[m];
-      const net = row.revenue - (row.riderPayout + row.hubExpense + row.losses);
+      const hubExp = Math.round(row.hubExpense);
+      const lossExp = Math.round(row.losses);
+      const net = row.revenue - (row.riderPayout + hubExp + lossExp);
       const margin = row.revenue > 0 ? ((net / row.revenue) * 100).toFixed(1) : '0.0';
       return {
         ...row,
+        hubExpense: hubExp,
+        losses: lossExp,
         netProfit: net,
         margin,
-        hasData: row.revenue > 0 || row.riderPayout > 0 || row.hubExpense > 0 || row.losses > 0,
+        hasData: row.revenue > 0 || row.riderPayout > 0 || hubExp > 0 || lossExp > 0,
       };
     }).filter((r) => (timeScope === 'month' ? r.month === selectedMonthFilter : r.hasData || r.month === selectedMonthFilter));
-  }, [myPayments, riderPayouts, hubExpenses, lossDetails, selectedMonthFilter, timeScope]);
+  }, [myPayments, riderPayouts, hubExpenses, lossDetails, selectedMonthFilter, timeScope, selectedCompanyFilter, activeCompanies]);
 
   // -------------------------------------------------------------
   // TAB 2: FRANCHISE-WISE P&L BREAKDOWN
@@ -313,9 +377,11 @@ export const Reports = () => {
       const revenue = compPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
       const riderPayout = compPayouts.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
       const deliveries = compPayouts.reduce((s, p) => s + (Number(p.deliveredPickupTotal) || Number(p.delivered) || 0), 0);
-      const unrecoveredLoss = compLosses
+      // Shared hub loss allocated equally across active companies, just like hub expenses
+      const rawTotalUnrecoveredLoss = lossDetails
         .filter((l) => l.status !== 'Recovered')
         .reduce((s, l) => s + (Number(l.price) || 0), 0);
+      const unrecoveredLoss = Math.round(rawTotalUnrecoveredLoss / (activeCompanies.length || 1));
       
       // Shared hub costs allocated equally or recorded per company
       const directExpense = compExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
@@ -361,8 +427,12 @@ export const Reports = () => {
       });
     });
 
-    // Outflows from Rider Payouts
+    // Outflows from Rider Payouts (Only for non-Valmo companies where hub pays riders)
     riderPayouts.forEach((r, idx) => {
+      const compName = (r.companyId?.name || '').toLowerCase();
+      const sheetType = (r.companyId?.sheetType || '').toLowerCase();
+      const isVal = compName.includes('valmo') || sheetType === 'valmo' || isValmoSelected;
+      if (isVal) return;
       list.push({
         id: `OUT-RP-${r._id || idx}`,
         date: r.createdAt ? new Date(r.createdAt).toISOString().split('T')[0] : selectedMonthFilter,
@@ -753,37 +823,37 @@ export const Reports = () => {
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-3.5 pb-8">
       {/* 1. TOP HERO / BANNER HEADER */}
-      <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-[#FFEBEE] text-[#E53935] flex items-center justify-center font-bold shadow-xs">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+      <div className="bg-white border border-[#E5E7EB] rounded-xl p-3 sm:p-3.5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-[#FFEBEE] text-[#E53935] flex items-center justify-center shrink-0 shadow-2xs">
+            <BarChart3 className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-sm sm:text-base font-bold text-gray-900 tracking-tight">
                 Reports & Financial Analytics
-                <Badge variant="danger" size="sm">CA & ITR Ready</Badge>
               </h1>
-              <p className="text-xs text-gray-500 font-medium mt-0.5">
-                Comprehensive Profit & Loss, Payouts, Hub Expenses, Losses & Audit Schedules
-              </p>
+              <Badge variant="danger" size="sm">CA & ITR Ready</Badge>
             </div>
+            <p className="text-[11px] text-gray-500 font-medium hidden sm:block">
+              Comprehensive Profit & Loss, Payouts, Hub Expenses, Losses & Audit Schedules
+            </p>
           </div>
         </div>
 
         {/* Global Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
           {/* Scope toggle: Month vs Full FY */}
-          <div className="bg-gray-100 p-1 rounded-xl flex items-center text-xs font-semibold text-gray-600 border border-gray-200">
+          <div className="bg-gray-100 p-0.5 rounded-lg flex items-center text-xs font-semibold text-gray-600 border border-gray-200">
             <button
               type="button"
               onClick={() => setTimeScope('month')}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer text-xs ${
                 timeScope === 'month'
                   ? 'bg-white text-gray-900 shadow-2xs font-bold'
-                  : 'hover:text-gray-900'
+                  : 'hover:text-gray-900 text-gray-500'
               }`}
             >
               {selectedMonthFilter}
@@ -791,10 +861,10 @@ export const Reports = () => {
             <button
               type="button"
               onClick={() => setTimeScope('fy')}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer text-xs ${
                 timeScope === 'fy'
                   ? 'bg-white text-gray-900 shadow-2xs font-bold'
-                  : 'hover:text-gray-900'
+                  : 'hover:text-gray-900 text-gray-500'
               }`}
             >
               Full FY {selectedFinancialYear}
@@ -805,103 +875,123 @@ export const Reports = () => {
             variant="outline"
             size="sm"
             onClick={handleExportPDF}
-            className="border-gray-200 hover:bg-gray-50 text-gray-700 shadow-2xs cursor-pointer"
+            className="h-8 px-2.5 text-xs border-gray-200 hover:bg-gray-50 text-gray-700 shadow-2xs cursor-pointer font-medium"
           >
-            <Printer className="w-4 h-4 mr-1.5 text-[#E53935]" />
-            Export PDF / Print
+            <Printer className="w-3.5 h-3.5 mr-1 text-[#E53935]" />
+            PDF / Print
           </Button>
 
           <Button
             variant="danger"
             size="sm"
             onClick={handleExportExcel}
-            className="bg-[#E53935] hover:bg-red-700 text-white shadow-xs cursor-pointer font-bold"
+            className="h-8 px-2.5 text-xs bg-[#E53935] hover:bg-red-700 text-white shadow-2xs cursor-pointer font-semibold"
           >
-            <FileSpreadsheet className="w-4 h-4 mr-1.5" />
-            Export Excel (.xlsx)
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />
+            Excel (.xlsx)
           </Button>
         </div>
       </div>
 
-      {/* 2. TOP EXECUTIVE METRICS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Revenue</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <IndianRupee className="w-4 h-4" />
+      {/* 2. TOP EXECUTIVE METRICS CARDS (Small, Compact, Responsive Grid) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        {/* TOTAL REVENUE */}
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-2xs hover:border-blue-300 transition-all">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-[11px] font-bold text-gray-500 uppercase tracking-wider truncate">
+              Total Revenue
+            </span>
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <IndianRupee className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold text-gray-900 mt-2 tracking-tight">
+          <div className="text-base sm:text-xl font-bold text-gray-900 mt-1 tracking-tight tabular-nums">
             {formatCurrency(totalRevenue)}
           </div>
-          <div className="text-[11px] font-medium text-gray-500 mt-1 flex items-center gap-1">
-            <span className="text-blue-600 font-bold">{myPayments.length} cycles</span> invoiced
+          <div className="text-[10px] sm:text-[11px] font-medium text-gray-500 mt-0.5 flex items-center gap-1 truncate">
+            <span className="text-blue-600 font-semibold">{myPayments.length} cycles</span> invoiced
           </div>
         </div>
 
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Rider Payout Cost</span>
-            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Users className="w-4 h-4" />
+        {/* RIDER PAYOUT COST */}
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-2xs hover:border-purple-300 transition-all">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-[11px] font-bold text-gray-500 uppercase tracking-wider truncate">
+              Rider Payout Cost
+            </span>
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <Users className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold text-gray-900 mt-2 tracking-tight">
+          <div className="text-base sm:text-xl font-bold text-gray-900 mt-1 tracking-tight tabular-nums">
             {formatCurrency(totalRiderPayout)}
           </div>
-          <div className="text-[11px] font-medium text-gray-500 mt-1 flex items-center gap-1">
-            <span className="text-purple-600 font-bold">{riderPayouts.length} riders</span> compensated
+          <div className="text-[10px] sm:text-[11px] font-medium text-gray-500 mt-0.5 flex items-center gap-1 truncate">
+            {isValmoSelected ? (
+              <span className="text-emerald-600 font-semibold">Valmo: Riders pay Hub (₹0 Outflow)</span>
+            ) : (
+              <>
+                <span className="text-purple-600 font-semibold">{riderPayouts.length} riders</span> paid
+              </>
+            )}
           </div>
         </div>
 
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hub Overheads & Loss</span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
+        {/* HUB OVERHEADS & LOSS */}
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-2xs hover:border-amber-300 transition-all">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-[11px] font-bold text-gray-500 uppercase tracking-wider truncate">
+              Hub Overheads & Loss
+            </span>
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <Receipt className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold text-gray-900 mt-2 tracking-tight">
+          <div className="text-base sm:text-xl font-bold text-gray-900 mt-1 tracking-tight tabular-nums">
             {formatCurrency(totalHubExpenses + lossMetrics.unrecoveredLoss)}
           </div>
-          <div className="text-[11px] font-medium text-gray-500 mt-1 flex items-center gap-1">
-            <span>Exp: {formatCurrency(totalHubExpenses)}</span> | <span>Loss: {formatCurrency(lossMetrics.unrecoveredLoss)}</span>
+          <div className="text-[10px] sm:text-[11px] font-medium text-gray-500 mt-0.5 flex items-center gap-1 truncate">
+            <span>Exp: {formatCurrency(totalHubExpenses)}</span>
+            <span className="text-gray-300">|</span>
+            <span>Loss: {formatCurrency(lossMetrics.unrecoveredLoss)}</span>
           </div>
         </div>
 
-        <div className={`border rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow ${
+        {/* NET P&L */}
+        <div className={`border rounded-xl p-3 shadow-2xs transition-all ${
           netProfit >= 0
-            ? 'bg-green-50/50 border-green-200'
-            : 'bg-red-50/50 border-red-200'
+            ? 'bg-green-50/40 border-green-200 hover:border-green-300'
+            : 'bg-red-50/40 border-red-200 hover:border-red-300'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Net P&L (Profit)</span>
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-[11px] font-bold text-gray-700 uppercase tracking-wider truncate">
+              Net P&L (Profit)
+            </span>
+            <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center shrink-0 ${
               netProfit >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-[#E53935]'
             }`}>
-              {netProfit >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+              {netProfit >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
             </div>
           </div>
-          <div className={`text-2xl font-extrabold mt-2 tracking-tight ${
+          <div className={`text-base sm:text-xl font-bold mt-1 tracking-tight tabular-nums ${
             netProfit >= 0 ? 'text-green-700' : 'text-[#E53935]'
           }`}>
             {formatCurrency(netProfit)}
           </div>
-          <div className="text-[11px] font-bold mt-1 flex items-center gap-1.5">
-            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-              netProfit >= 0 ? 'bg-green-200/80 text-green-900' : 'bg-red-200/80 text-red-900'
+          <div className="text-[10px] sm:text-[11px] font-semibold mt-0.5 flex items-center gap-1.5 truncate">
+            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+              netProfit >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
             }`}>
-              {profitMargin}% Margin
+              {profitMargin}%
             </span>
-            <span className="text-gray-600 font-medium">Net Hub Margin</span>
+            <span className="text-gray-500 font-medium text-[10px]">Net Hub Margin</span>
           </div>
         </div>
       </div>
 
       {/* 3. REPORT TAB SELECTION PILLS */}
-      <div className="bg-white border border-[#E5E7EB] rounded-2xl p-2 shadow-2xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+      <div className="bg-white border border-[#E5E7EB] rounded-xl p-1 shadow-2xs">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
           {REPORT_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -910,13 +1000,13 @@ export const Reports = () => {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer ${
                   isActive
                     ? 'bg-[#FFEBEE] text-[#E53935] shadow-2xs border border-[#FFCDD2]'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-transparent'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-[#E53935]' : 'text-gray-400'}`} />
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#E53935]' : 'text-gray-400'}`} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -925,20 +1015,20 @@ export const Reports = () => {
       </div>
 
       {/* 4. SEARCH & FILTER CONTROLS */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
+        <div className="relative w-full sm:w-72">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search report records..."
-            className="w-full pl-9 pr-3.5 py-2 text-xs font-medium bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#E53935] focus:ring-2 focus:ring-[#FFCDD2]/50 shadow-2xs"
+            className="w-full pl-8 pr-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#E53935] focus:ring-1 focus:ring-[#FFCDD2] shadow-2xs"
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end text-xs text-gray-500 font-medium">
-          <span>Active Context:</span>
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end text-[11px] text-gray-500 font-medium">
+          <span className="hidden sm:inline">Active Context:</span>
           <Badge variant="neutral" size="sm">{currentCompanyName}</Badge>
           <Badge variant="primary" size="sm">{selectedMonthFilter} {selectedFinancialYear}</Badge>
         </div>
@@ -948,11 +1038,11 @@ export const Reports = () => {
 
       {/* TAB 1: MONTHLY PROFIT & LOSS */}
       {activeTab === 'monthly_pnl' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Monthly Profit & Loss Statement</h2>
-              <p className="text-xs text-gray-500">Gross inflows, rider expenses, hub operating costs, and net margin</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Monthly Profit & Loss Statement</h2>
+              <p className="text-[11px] text-gray-500">Gross inflows, rider expenses, hub operating costs, and net margin</p>
             </div>
             <Badge variant="info" size="sm">FY {selectedFinancialYear}</Badge>
           </div>
@@ -960,51 +1050,51 @@ export const Reports = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Month</th>
-                  <th className="py-3 px-4 text-right">Franchise Inflow</th>
-                  <th className="py-3 px-4 text-right">Rider Payout</th>
-                  <th className="py-3 px-4 text-right">Hub Expenses</th>
-                  <th className="py-3 px-4 text-right">Parcel Losses</th>
-                  <th className="py-3 px-4 text-right">Net Profit / (Loss)</th>
-                  <th className="py-3 px-4 text-center">Net Margin</th>
-                  <th className="py-3 px-4 text-center">Status</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Month</th>
+                  <th className="py-2 px-3 text-right">Franchise Inflow</th>
+                  <th className="py-2 px-3 text-right">Rider Payout</th>
+                  <th className="py-2 px-3 text-right">Hub Expenses</th>
+                  <th className="py-2 px-3 text-right">Parcel Losses</th>
+                  <th className="py-2 px-3 text-right">Net Profit / (Loss)</th>
+                  <th className="py-2 px-3 text-center">Net Margin</th>
+                  <th className="py-2 px-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(monthlyPnlData, ['month']).map((row) => {
                   const isProfitable = row.netProfit >= 0;
                   return (
-                    <tr key={row.month} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-3 px-4 font-bold text-gray-900 flex items-center gap-2">
+                    <tr key={row.month} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="py-1.5 sm:py-2 px-3 font-semibold text-gray-900 flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5 text-gray-400" />
                         {row.month}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-gray-900">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-900 tabular-nums">
                         {formatCurrency(row.revenue)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-gray-700">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-700 tabular-nums">
                         {formatCurrency(row.riderPayout)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-gray-700">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-700 tabular-nums">
                         {formatCurrency(row.hubExpense)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-amber-700">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-amber-700 tabular-nums">
                         {formatCurrency(row.losses)}
                       </td>
-                      <td className={`py-3 px-4 text-right font-bold ${
+                      <td className={`py-1.5 sm:py-2 px-3 text-right font-bold tabular-nums ${
                         isProfitable ? 'text-green-600' : 'text-[#E53935]'
                       }`}>
                         {formatCurrency(row.netProfit)}
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                      <td className="py-1.5 sm:py-2 px-3 text-center">
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10.5px] font-bold ${
                           isProfitable ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
                         }`}>
                           {row.margin}%
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-1.5 sm:py-2 px-3 text-center">
                         <Badge variant={isProfitable ? 'success' : 'danger'} size="sm">
                           {isProfitable ? 'Profitable' : 'Loss'}
                         </Badge>
@@ -1015,18 +1105,18 @@ export const Reports = () => {
               </tbody>
               <tfoot>
                 <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold text-gray-900">
-                  <td className="py-3.5 px-4 text-xs">TOTAL / SUMMARY</td>
-                  <td className="py-3.5 px-4 text-right text-xs">{formatCurrency(totalRevenue)}</td>
-                  <td className="py-3.5 px-4 text-right text-xs">{formatCurrency(totalRiderPayout)}</td>
-                  <td className="py-3.5 px-4 text-right text-xs">{formatCurrency(totalHubExpenses)}</td>
-                  <td className="py-3.5 px-4 text-right text-xs">{formatCurrency(lossMetrics.unrecoveredLoss)}</td>
-                  <td className={`py-3.5 px-4 text-right text-xs ${
+                  <td className="py-2 sm:py-2.5 px-3 text-xs">TOTAL / SUMMARY</td>
+                  <td className="py-2 sm:py-2.5 px-3 text-right text-xs tabular-nums">{formatCurrency(totalRevenue)}</td>
+                  <td className="py-2 sm:py-2.5 px-3 text-right text-xs tabular-nums">{formatCurrency(totalRiderPayout)}</td>
+                  <td className="py-2 sm:py-2.5 px-3 text-right text-xs tabular-nums">{formatCurrency(totalHubExpenses)}</td>
+                  <td className="py-2 sm:py-2.5 px-3 text-right text-xs tabular-nums">{formatCurrency(lossMetrics.unrecoveredLoss)}</td>
+                  <td className={`py-2 sm:py-2.5 px-3 text-right text-xs tabular-nums ${
                     netProfit >= 0 ? 'text-green-700' : 'text-[#E53935]'
                   }`}>
                     {formatCurrency(netProfit)}
                   </td>
-                  <td className="py-3.5 px-4 text-center text-xs">{profitMargin}%</td>
-                  <td className="py-3.5 px-4 text-center">
+                  <td className="py-2 sm:py-2.5 px-3 text-center text-xs">{profitMargin}%</td>
+                  <td className="py-2 sm:py-2.5 px-3 text-center">
                     <Badge variant={netProfit >= 0 ? 'success' : 'danger'} size="sm">
                       {netProfit >= 0 ? 'Net Gain' : 'Net Deficit'}
                     </Badge>
@@ -1040,11 +1130,11 @@ export const Reports = () => {
 
       {/* TAB 2: FRANCHISE-WISE PROFIT & LOSS */}
       {activeTab === 'franchise_pnl' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Franchise / Logistics Company P&L</h2>
-              <p className="text-xs text-gray-500">Breakdown of revenue, parcel volume, rider disbursements and net yield per partner</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Franchise / Logistics Company P&L</h2>
+              <p className="text-[11px] text-gray-500">Breakdown of revenue, parcel volume, rider disbursements and net yield per partner</p>
             </div>
             <Badge variant="neutral" size="sm">{activeCompanies.length} Active Partners</Badge>
           </div>
@@ -1052,53 +1142,53 @@ export const Reports = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Partner / Company</th>
-                  <th className="py-3 px-4 text-center">Deliveries</th>
-                  <th className="py-3 px-4 text-right">Inflow Revenue</th>
-                  <th className="py-3 px-4 text-right">Rider Payout</th>
-                  <th className="py-3 px-4 text-right">Loss Deductions</th>
-                  <th className="py-3 px-4 text-right">Hub Allocated Cost</th>
-                  <th className="py-3 px-4 text-right">Net Contribution</th>
-                  <th className="py-3 px-4 text-center">Margin %</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Partner / Company</th>
+                  <th className="py-2 px-3 text-center">Deliveries</th>
+                  <th className="py-2 px-3 text-right">Inflow Revenue</th>
+                  <th className="py-2 px-3 text-right">Rider Payout</th>
+                  <th className="py-2 px-3 text-right">Loss Deductions</th>
+                  <th className="py-2 px-3 text-right">Hub Allocated Cost</th>
+                  <th className="py-2 px-3 text-right">Net Contribution</th>
+                  <th className="py-2 px-3 text-center">Margin %</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(franchisePnlData, ['companyName', 'companyCode']).map((row) => {
                   const isPositive = row.netProfit >= 0;
                   return (
-                    <tr key={row.companyId} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-3 px-4 font-bold text-gray-900 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-[10px]">
+                    <tr key={row.companyId} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="py-1.5 sm:py-2 px-3 font-semibold text-gray-900 flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-[9px] shrink-0">
                           {row.companyCode}
                         </div>
                         <div>
                           <div>{row.companyName}</div>
-                          <div className="text-[10px] text-gray-400 font-normal">Code: {row.companyCode}</div>
+                          <div className="text-[9.5px] text-gray-400 font-normal">Code: {row.companyCode}</div>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center font-semibold text-gray-800">
+                      <td className="py-1.5 sm:py-2 px-3 text-center font-medium text-gray-800 tabular-nums">
                         {formatNumber(row.deliveries)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-gray-900">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-900 tabular-nums">
                         {formatCurrency(row.revenue)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-gray-700">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-700 tabular-nums">
                         {formatCurrency(row.riderPayout)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-amber-700">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-amber-700 tabular-nums">
                         {formatCurrency(row.loss)}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-gray-600">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-600 tabular-nums">
                         {formatCurrency(row.hubExpense)}
                       </td>
-                      <td className={`py-3 px-4 text-right font-bold ${
+                      <td className={`py-1.5 sm:py-2 px-3 text-right font-bold tabular-nums ${
                         isPositive ? 'text-green-600' : 'text-[#E53935]'
                       }`}>
                         {formatCurrency(row.netProfit)}
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                      <td className="py-1.5 sm:py-2 px-3 text-center">
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10.5px] font-bold ${
                           isPositive ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
                         }`}>
                           {row.margin}%
@@ -1115,11 +1205,11 @@ export const Reports = () => {
 
       {/* TAB 3: RIDER PAYOUT REPORT */}
       {activeTab === 'rider_payout' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Rider Payout & Delivery Report</h2>
-              <p className="text-xs text-gray-500">Individual delivery parcels, rate cards, deductions, and final net payout</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Rider Payout & Delivery Report</h2>
+              <p className="text-[11px] text-gray-500">Individual delivery parcels, rate cards, deductions, and final net payout</p>
             </div>
             <Badge variant="primary" size="sm">{riderPayouts.length} Records</Badge>
           </div>
@@ -1127,45 +1217,45 @@ export const Reports = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Rider Info</th>
-                  <th className="py-3 px-4">Month</th>
-                  <th className="py-3 px-4 text-center">Delivered</th>
-                  <th className="py-3 px-4 text-right">Rate Card</th>
-                  <th className="py-3 px-4 text-right">Base Payout</th>
-                  <th className="py-3 px-4 text-right">Advance Cut</th>
-                  <th className="py-3 px-4 text-right">Loss Cut</th>
-                  <th className="py-3 px-4 text-right">Final Payout</th>
-                  <th className="py-3 px-4 text-center">Status</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Rider Info</th>
+                  <th className="py-2 px-3">Month</th>
+                  <th className="py-2 px-3 text-center">Delivered</th>
+                  <th className="py-2 px-3 text-right">Rate Card</th>
+                  <th className="py-2 px-3 text-right">Base Payout</th>
+                  <th className="py-2 px-3 text-right">Advance Cut</th>
+                  <th className="py-2 px-3 text-right">Loss Cut</th>
+                  <th className="py-2 px-3 text-right">Final Payout</th>
+                  <th className="py-2 px-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(riderPayouts, ['riderName', 'riderId', 'month', 'paymentStatus']).map((r, i) => (
-                  <tr key={r._id || i} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-gray-900">{r.riderName || 'Unnamed'}</div>
-                      <div className="text-[10px] text-gray-400 font-medium">ID: {r.riderId || 'N/A'}</div>
+                  <tr key={r._id || i} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="py-1.5 sm:py-2 px-3">
+                      <div className="font-semibold text-gray-900">{r.riderName || 'Unnamed'}</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium">ID: {r.riderId || 'N/A'}</div>
                     </td>
-                    <td className="py-3 px-4 text-gray-600 font-medium">{r.month || selectedMonthFilter}</td>
-                    <td className="py-3 px-4 text-center font-bold text-gray-800">
+                    <td className="py-1.5 sm:py-2 px-3 text-gray-600 font-medium">{r.month || selectedMonthFilter}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-center font-bold text-gray-800 tabular-nums">
                       {r.deliveredPickupTotal || r.delivered || 0}
                     </td>
-                    <td className="py-3 px-4 text-right font-medium text-gray-600">
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-600 tabular-nums">
                       ₹{r.rateCard || 12}
                     </td>
-                    <td className="py-3 px-4 text-right font-semibold text-gray-900">
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-900 tabular-nums">
                       {formatCurrency(r.payout)}
                     </td>
-                    <td className="py-3 px-4 text-right font-semibold text-red-600">
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-red-600 tabular-nums">
                       -{formatCurrency(r.advance || 0)}
                     </td>
-                    <td className="py-3 px-4 text-right font-semibold text-amber-600">
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-amber-600 tabular-nums">
                       -{formatCurrency(r.loss || 0)}
                     </td>
-                    <td className="py-3 px-4 text-right font-bold text-[#E53935]">
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-[#E53935] tabular-nums">
                       {formatCurrency(r.finalPayout)}
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-1.5 sm:py-2 px-3 text-center">
                       <Badge
                         variant={
                           r.paymentStatus === 'PAID'
@@ -1189,41 +1279,41 @@ export const Reports = () => {
 
       {/* TAB 4: EXPENSE REPORT */}
       {activeTab === 'hub_expense' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Hub Operational Expense Report</h2>
-              <p className="text-xs text-gray-500">Rent, electricity, repairs, tea/refreshments, travel & misc expenses</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Hub Operational Expense Report</h2>
+              <p className="text-[11px] text-gray-500">Rent, electricity, repairs, tea/refreshments, travel & misc expenses</p>
             </div>
             <div className="text-xs font-bold text-gray-700">
-              Total: <span className="text-[#E53935]">{formatCurrency(totalHubExpenses)}</span>
+              Total: <span className="text-[#E53935] tabular-nums">{formatCurrency(totalHubExpenses)}</span>
             </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Expense Title / Category</th>
-                  <th className="py-3 px-4">Month</th>
-                  <th className="py-3 px-4 text-right">Amount</th>
-                  <th className="py-3 px-4">Remark / Notes</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Date</th>
+                  <th className="py-2 px-3">Expense Title / Category</th>
+                  <th className="py-2 px-3">Month</th>
+                  <th className="py-2 px-3 text-right">Amount</th>
+                  <th className="py-2 px-3">Remark / Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(hubExpenses, ['expenseName', 'remark', 'month', 'date']).map((e, i) => (
-                  <tr key={e._id || i} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="py-3 px-4 font-medium text-gray-600">{e.date || 'N/A'}</td>
-                    <td className="py-3 px-4 font-bold text-gray-900 flex items-center gap-2">
+                  <tr key={e._id || i} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="py-1.5 sm:py-2 px-3 font-medium text-gray-600">{e.date || 'N/A'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 font-semibold text-gray-900 flex items-center gap-1.5">
                       <Receipt className="w-3.5 h-3.5 text-gray-400" />
                       {e.expenseName || 'General Expense'}
                     </td>
-                    <td className="py-3 px-4 text-gray-600">{e.month || selectedMonthFilter}</td>
-                    <td className="py-3 px-4 text-right font-bold text-gray-900">
+                    <td className="py-1.5 sm:py-2 px-3 text-gray-600">{e.month || selectedMonthFilter}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-gray-900 tabular-nums">
                       {formatCurrency(e.amount)}
                     </td>
-                    <td className="py-3 px-4 text-gray-500 italic text-[11px]">{e.remark || '—'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-gray-500 italic text-[10.5px]">{e.remark || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1234,13 +1324,13 @@ export const Reports = () => {
 
       {/* TAB 5: LOSS REPORT */}
       {activeTab === 'loss_report' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Loss & Recovery Report</h2>
-              <p className="text-xs text-gray-500">Missing/damaged parcel claims, recoveries from riders & net hub write-offs</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Loss & Recovery Report</h2>
+              <p className="text-[11px] text-gray-500">Missing/damaged parcel claims, recoveries from riders & net hub write-offs</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Badge variant="success" size="sm">Recovered: {formatCurrency(lossMetrics.recoveredLoss)}</Badge>
               <Badge variant="danger" size="sm">Pending: {formatCurrency(lossMetrics.unrecoveredLoss)}</Badge>
             </div>
@@ -1249,28 +1339,28 @@ export const Reports = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Tracking ID</th>
-                  <th className="py-3 px-4">Rider Name</th>
-                  <th className="py-3 px-4">Reason</th>
-                  <th className="py-3 px-4 text-right">Parcel Value</th>
-                  <th className="py-3 px-4 text-center">Recovery Status</th>
-                  <th className="py-3 px-4">Remark</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Tracking ID</th>
+                  <th className="py-2 px-3">Rider Name</th>
+                  <th className="py-2 px-3">Reason</th>
+                  <th className="py-2 px-3 text-right">Parcel Value</th>
+                  <th className="py-2 px-3 text-center">Recovery Status</th>
+                  <th className="py-2 px-3">Remark</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(lossDetails, ['trackingId', 'riderName', 'reason', 'remark', 'status']).map((l, i) => (
-                  <tr key={l._id || i} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-gray-900">{l.trackingId || 'N/A'}</td>
-                    <td className="py-3 px-4 font-semibold text-gray-800">{l.riderName || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600">{l.reason || 'Damage/Loss'}</td>
-                    <td className="py-3 px-4 text-right font-bold text-gray-900">{formatCurrency(l.price)}</td>
-                    <td className="py-3 px-4 text-center">
+                  <tr key={l._id || i} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="py-1.5 sm:py-2 px-3 font-mono font-semibold text-gray-900">{l.trackingId || 'N/A'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 font-medium text-gray-800">{l.riderName || '—'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-gray-600">{l.reason || 'Damage/Loss'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-gray-900 tabular-nums">{formatCurrency(l.price)}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-center">
                       <Badge variant={l.status === 'Recovered' ? 'success' : 'danger'} size="sm">
                         {l.status || 'Not Recovered'}
                       </Badge>
                     </td>
-                    <td className="py-3 px-4 text-gray-500 italic text-[11px]">{l.remark || '—'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-gray-500 italic text-[10.5px]">{l.remark || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1281,41 +1371,41 @@ export const Reports = () => {
 
       {/* TAB 6: ADVANCE REPORT */}
       {activeTab === 'advance_report' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Rider Advances Report</h2>
-              <p className="text-xs text-gray-500">Disbursed cash advances, deductions via payouts, and outstanding balances</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Rider Advances Report</h2>
+              <p className="text-[11px] text-gray-500">Disbursed cash advances, deductions via payouts, and outstanding balances</p>
             </div>
             <div className="text-xs font-bold text-gray-700">
-              Outstanding: <span className="text-amber-600">{formatCurrency(advanceMetrics.remainingAmount)}</span>
+              Outstanding: <span className="text-amber-600 tabular-nums">{formatCurrency(advanceMetrics.remainingAmount)}</span>
             </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Rider Details</th>
-                  <th className="py-3 px-4 text-right">Advance Given</th>
-                  <th className="py-3 px-4 text-right">Advance Cut</th>
-                  <th className="py-3 px-4 text-right">Outstanding Balance</th>
-                  <th className="py-3 px-4">Remark</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Date</th>
+                  <th className="py-2 px-3">Rider Details</th>
+                  <th className="py-2 px-3 text-right">Advance Given</th>
+                  <th className="py-2 px-3 text-right">Advance Cut</th>
+                  <th className="py-2 px-3 text-right">Outstanding Balance</th>
+                  <th className="py-2 px-3">Remark</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(advances, ['riderName', 'riderId', 'remark', 'date']).map((a, i) => (
-                  <tr key={a._id || i} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="py-3 px-4 font-medium text-gray-600">{a.date || 'N/A'}</td>
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-gray-900">{a.riderName || 'Unnamed'}</div>
-                      <div className="text-[10px] text-gray-400 font-medium">ID: {a.riderId || 'N/A'}</div>
+                  <tr key={a._id || i} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="py-1.5 sm:py-2 px-3 font-medium text-gray-600">{a.date || 'N/A'}</td>
+                    <td className="py-1.5 sm:py-2 px-3">
+                      <div className="font-semibold text-gray-900">{a.riderName || 'Unnamed'}</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium">ID: {a.riderId || 'N/A'}</div>
                     </td>
-                    <td className="py-3 px-4 text-right font-semibold text-gray-900">{formatCurrency(a.advance)}</td>
-                    <td className="py-3 px-4 text-right font-semibold text-green-600">{formatCurrency(a.advanceCut)}</td>
-                    <td className="py-3 px-4 text-right font-bold text-amber-600">{formatCurrency(a.remainingAmount)}</td>
-                    <td className="py-3 px-4 text-gray-500 italic text-[11px]">{a.remark || '—'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-gray-900 tabular-nums">{formatCurrency(a.advance)}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-medium text-green-600 tabular-nums">{formatCurrency(a.advanceCut)}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-amber-600 tabular-nums">{formatCurrency(a.remainingAmount)}</td>
+                    <td className="py-1.5 sm:py-2 px-3 text-gray-500 italic text-[10.5px]">{a.remark || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1326,11 +1416,11 @@ export const Reports = () => {
 
       {/* TAB 7: CASH FLOW REPORT */}
       {activeTab === 'cash_flow' && (
-        <div className="bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+          <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">Cash Flow & Payment Timeline</h2>
-              <p className="text-xs text-gray-500">Chronological ledger of franchise disbursements, payouts and hub payments</p>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-900">Cash Flow & Payment Timeline</h2>
+              <p className="text-[11px] text-gray-500">Chronological ledger of franchise disbursements, payouts and hub payments</p>
             </div>
             <Badge variant="neutral" size="sm">{cashFlowData.length} Transactions</Badge>
           </div>
@@ -1338,39 +1428,39 @@ export const Reports = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-bold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Entity / Party</th>
-                  <th className="py-3 px-4">Particulars</th>
-                  <th className="py-3 px-4 text-right">Inflow (Cr)</th>
-                  <th className="py-3 px-4 text-right">Outflow (Dr)</th>
-                  <th className="py-3 px-4 text-center">Status</th>
+                <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="py-2 px-3">Date</th>
+                  <th className="py-2 px-3">Type</th>
+                  <th className="py-2 px-3">Entity / Party</th>
+                  <th className="py-2 px-3">Particulars</th>
+                  <th className="py-2 px-3 text-right">Inflow (Cr)</th>
+                  <th className="py-2 px-3 text-right">Outflow (Dr)</th>
+                  <th className="py-2 px-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filterBySearch(cashFlowData, ['entity', 'category', 'type', 'status']).map((cf) => {
                   const isInflow = cf.type === 'INFLOW';
                   return (
-                    <tr key={cf.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-3 px-4 font-medium text-gray-600">{cf.date}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    <tr key={cf.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="py-1.5 sm:py-2 px-3 font-medium text-gray-600">{cf.date}</td>
+                      <td className="py-1.5 sm:py-2 px-3">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                           isInflow ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-[#E53935] border border-red-200'
                         }`}>
                           {isInflow ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                           {cf.type}
                         </span>
                       </td>
-                      <td className="py-3 px-4 font-bold text-gray-900">{cf.entity}</td>
-                      <td className="py-3 px-4 text-gray-600">{cf.category}</td>
-                      <td className="py-3 px-4 text-right font-bold text-green-600">
+                      <td className="py-1.5 sm:py-2 px-3 font-semibold text-gray-900">{cf.entity}</td>
+                      <td className="py-1.5 sm:py-2 px-3 text-gray-600">{cf.category}</td>
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-green-600 tabular-nums">
                         {isInflow ? formatCurrency(cf.amount) : '—'}
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-[#E53935]">
+                      <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-[#E53935] tabular-nums">
                         {!isInflow ? formatCurrency(cf.amount) : '—'}
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-1.5 sm:py-2 px-3 text-center">
                         <Badge variant="success" size="sm">{cf.status}</Badge>
                       </td>
                     </tr>
@@ -1384,119 +1474,119 @@ export const Reports = () => {
 
       {/* TAB 8: OWNER / PERSONAL PAYMENT & CA TAX REPORT */}
       {activeTab === 'owner_report' && (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-r from-red-50 via-white to-gray-50 border border-[#FFCDD2] rounded-2xl p-6 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-4">
+          <div className="bg-gradient-to-r from-red-50 via-white to-gray-50 border border-[#FFCDD2] rounded-xl p-4 shadow-2xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-6 h-6 text-[#E53935]" />
-                  <h2 className="text-lg font-bold text-gray-900">CA & Tax Filing Computation Schedule</h2>
+                  <ShieldCheck className="w-5 h-5 text-[#E53935]" />
+                  <h2 className="text-sm sm:text-base font-bold text-gray-900">CA & Tax Filing Computation Schedule</h2>
                 </div>
-                <p className="text-xs text-gray-600 mt-1 max-w-2xl">
+                <p className="text-[11px] text-gray-600 mt-0.5 max-w-2xl">
                   Prepared for Chartered Accountant audit, Section 194C TDS reconciliation, ITR-3/ITR-4 business income filing, and Proprietor Personal Retained Earnings.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="danger" size="sm" onClick={handleExportPDF}>
-                  <Printer className="w-4 h-4 mr-1.5" />
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="danger" size="sm" onClick={handleExportPDF} className="h-8 text-xs font-semibold">
+                  <Printer className="w-3.5 h-3.5 mr-1" />
                   Print Official Schedule
                 </Button>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white border border-[#E5E7EB] rounded-2xl overflow-hidden shadow-xs">
-              <div className="px-5 py-4 border-b border-gray-100 font-bold text-sm text-gray-900 flex items-center justify-between">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
+            <div className="lg:col-span-2 bg-white border border-[#E5E7EB] rounded-xl overflow-hidden shadow-2xs">
+              <div className="px-3.5 py-2.5 border-b border-gray-100 font-bold text-xs sm:text-sm text-gray-900 flex items-center justify-between">
                 <span>Profit & Loss Schedule for ITR Computation</span>
                 <Badge variant="primary" size="sm">{selectedFinancialYear}</Badge>
               </div>
 
               <div className="divide-y divide-gray-100 text-xs">
-                <div className="p-4 flex items-center justify-between hover:bg-gray-50/60">
+                <div className="p-3 flex items-center justify-between hover:bg-gray-50/70">
                   <div>
-                    <div className="font-bold text-gray-900">1. Gross Business Turnover / Franchise Revenue</div>
-                    <div className="text-[11px] text-gray-500">Gross Contract Invoices received from Logistics Partners</div>
+                    <div className="font-semibold text-gray-900">1. Gross Business Turnover / Franchise Revenue</div>
+                    <div className="text-[10px] text-gray-500">Gross Contract Invoices received from Logistics Partners</div>
                   </div>
-                  <div className="font-extrabold text-sm text-gray-900">{formatCurrency(totalRevenue)}</div>
+                  <div className="font-bold text-xs sm:text-sm text-gray-900 tabular-nums">{formatCurrency(totalRevenue)}</div>
                 </div>
 
-                <div className="p-4 flex items-center justify-between hover:bg-gray-50/60">
+                <div className="p-3 flex items-center justify-between hover:bg-gray-50/70">
                   <div>
-                    <div className="font-bold text-gray-700">2. Less: Direct Operational Wages (Rider Payouts)</div>
-                    <div className="text-[11px] text-gray-500">Direct delivery charges disbursed under contract</div>
+                    <div className="font-semibold text-gray-700">2. Less: Direct Operational Wages (Rider Payouts)</div>
+                    <div className="text-[10px] text-gray-500">Direct delivery charges disbursed under contract</div>
                   </div>
-                  <div className="font-bold text-sm text-red-600">-{formatCurrency(totalRiderPayout)}</div>
+                  <div className="font-bold text-xs sm:text-sm text-red-600 tabular-nums">-{formatCurrency(totalRiderPayout)}</div>
                 </div>
 
-                <div className="p-4 flex items-center justify-between bg-gray-50 font-bold">
+                <div className="p-3 flex items-center justify-between bg-gray-50 font-bold">
                   <div>
                     <div className="text-gray-900 font-bold">3. Gross Operating Profit (EBITDA Level)</div>
-                    <div className="text-[11px] text-gray-500 font-normal">Margin before hub overheads</div>
+                    <div className="text-[10px] text-gray-500 font-normal">Margin before hub overheads</div>
                   </div>
-                  <div className="font-extrabold text-sm text-gray-900">{formatCurrency(totalRevenue - totalRiderPayout)}</div>
+                  <div className="font-bold text-xs sm:text-sm text-gray-900 tabular-nums">{formatCurrency(totalRevenue - totalRiderPayout)}</div>
                 </div>
 
-                <div className="p-4 flex items-center justify-between hover:bg-gray-50/60">
+                <div className="p-3 flex items-center justify-between hover:bg-gray-50/70">
                   <div>
-                    <div className="font-bold text-gray-700">4. Less: Hub Indirect Overheads (Rent, Utilities, Ops)</div>
-                    <div className="text-[11px] text-gray-500">Allowable business overhead expenses</div>
+                    <div className="font-semibold text-gray-700">4. Less: Hub Indirect Overheads (Rent, Utilities, Ops)</div>
+                    <div className="text-[10px] text-gray-500">Allowable business overhead expenses</div>
                   </div>
-                  <div className="font-bold text-sm text-red-600">-{formatCurrency(totalHubExpenses)}</div>
+                  <div className="font-bold text-xs sm:text-sm text-red-600 tabular-nums">-{formatCurrency(totalHubExpenses)}</div>
                 </div>
 
-                <div className="p-4 flex items-center justify-between hover:bg-gray-50/60">
+                <div className="p-3 flex items-center justify-between hover:bg-gray-50/70">
                   <div>
-                    <div className="font-bold text-gray-700">5. Less: Operational Parcel Losses & Write-offs</div>
-                    <div className="text-[11px] text-gray-500">Unrecovered missing/damaged shipment claims</div>
+                    <div className="font-semibold text-gray-700">5. Less: Operational Parcel Losses & Write-offs</div>
+                    <div className="text-[10px] text-gray-500">Unrecovered missing/damaged shipment claims</div>
                   </div>
-                  <div className="font-bold text-sm text-red-600">-{formatCurrency(lossMetrics.unrecoveredLoss)}</div>
+                  <div className="font-bold text-xs sm:text-sm text-red-600 tabular-nums">-{formatCurrency(lossMetrics.unrecoveredLoss)}</div>
                 </div>
 
-                <div className="p-4.5 flex items-center justify-between bg-[#FFEBEE] border-t-2 border-[#E53935]">
+                <div className="p-3 sm:p-3.5 flex items-center justify-between bg-[#FFEBEE] border-t-2 border-[#E53935]">
                   <div>
-                    <div className="font-extrabold text-sm text-[#E53935]">6. NET TAXABLE BUSINESS PROFIT / OWNER RETAINED EARNINGS</div>
-                    <div className="text-[11px] text-red-700 font-medium">Final Net Taxable Income before Advance Tax</div>
+                    <div className="font-bold text-xs sm:text-sm text-[#E53935]">6. NET TAXABLE BUSINESS PROFIT / OWNER RETAINED EARNINGS</div>
+                    <div className="text-[10px] text-red-700 font-medium">Final Net Taxable Income before Advance Tax</div>
                   </div>
-                  <div className="font-extrabold text-base text-[#E53935]">{formatCurrency(netProfit)}</div>
+                  <div className="font-bold text-sm sm:text-base text-[#E53935] tabular-nums">{formatCurrency(netProfit)}</div>
                 </div>
               </div>
             </div>
 
             {/* Right Card: Tax & Compliance Highlights */}
-            <div className="space-y-4">
-              <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-xs space-y-3">
-                <div className="flex items-center gap-2 font-bold text-sm text-gray-900">
-                  <FileCheck className="w-4 h-4 text-[#E53935]" />
+            <div className="space-y-3">
+              <div className="bg-white border border-[#E5E7EB] rounded-xl p-3.5 shadow-2xs space-y-2.5">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-gray-900">
+                  <FileCheck className="w-3.5 h-3.5 text-[#E53935]" />
                   <span>Tax Compliance Summary</span>
                 </div>
 
-                <div className="space-y-2.5 text-xs text-gray-600">
-                  <div className="flex justify-between border-b border-gray-100 pb-2">
+                <div className="space-y-2 text-xs text-gray-600">
+                  <div className="flex justify-between border-b border-gray-100 pb-1.5">
                     <span>Estimated TDS Claim (1% Sec 194C)</span>
-                    <strong className="text-gray-900">{formatCurrency(totalRevenue * 0.01)}</strong>
+                    <strong className="text-gray-900 tabular-nums">{formatCurrency(totalRevenue * 0.01)}</strong>
                   </div>
-                  <div className="flex justify-between border-b border-gray-100 pb-2">
+                  <div className="flex justify-between border-b border-gray-100 pb-1.5">
                     <span>Outstanding Advance Asset</span>
-                    <strong className="text-amber-600">{formatCurrency(advanceMetrics.remainingAmount)}</strong>
+                    <strong className="text-amber-600 tabular-nums">{formatCurrency(advanceMetrics.remainingAmount)}</strong>
                   </div>
-                  <div className="flex justify-between border-b border-gray-100 pb-2">
+                  <div className="flex justify-between border-b border-gray-100 pb-1.5">
                     <span>Net Margin Efficiency</span>
-                    <strong className="text-green-600">{profitMargin}%</strong>
+                    <strong className="text-green-600 tabular-nums">{profitMargin}%</strong>
                   </div>
                 </div>
 
-                <div className="pt-2 text-[11px] text-gray-400 leading-relaxed">
+                <div className="pt-1 text-[10px] text-gray-400 leading-relaxed">
                   * Note: All computations are aggregated in real-time from ledger entries and verified according to Indian Accounting Standards (AS).
                 </div>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4.5 text-xs text-blue-900 space-y-2">
-                <div className="font-bold flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-blue-700" />
+              <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-xs">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-700" />
                   <span>Ready for Audit Verification</span>
                 </div>
-                <p className="text-[11px] text-blue-800 leading-relaxed">
+                <p className="text-[10.5px] text-blue-800 leading-relaxed">
                   Click <strong>Export Excel (.xlsx)</strong> or <strong>Export PDF</strong> to send directly to your Chartered Accountant for financial year closure.
                 </p>
               </div>

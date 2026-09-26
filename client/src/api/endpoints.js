@@ -26,6 +26,7 @@ export const ENDPOINTS = {
     CREATE: `${API_BASE_URL}/companies`,
     UPDATE: (id) => `${API_BASE_URL}/companies/${id}`,
     DELETE: (id) => `${API_BASE_URL}/companies/${id}`,
+    BULK_DELETE: `${API_BASE_URL}/companies/bulk-delete`,
     TOGGLE_STATUS: (id) => `${API_BASE_URL}/companies/${id}/toggle-status`,
   },
 
@@ -65,6 +66,8 @@ export const ENDPOINTS = {
     GET_ALL: `${API_BASE_URL}/payments`,
     CREATE: `${API_BASE_URL}/payments`,
     UPDATE_STATUS: (id) => `${API_BASE_URL}/payments/${id}/status`,
+    BULK_DELETE: `${API_BASE_URL}/payments/bulk-delete`,
+    DELETE: (id) => `${API_BASE_URL}/payments/${id}`,
   },
 
   // 7. Rider Advance Management

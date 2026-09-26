@@ -10,9 +10,10 @@ import {
   ChevronDown,
   FileSpreadsheet,
   Mail,
+  Trash2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { CustomDropdown, Modal, Pagination, SampleTemplateDropdown, SendEmailModal } from '../components/common';
+import { CustomDropdown, Modal, Pagination, SampleTemplateDropdown, SendEmailModal, ConfirmationModal } from '../components/common';
 import { useCompany } from '../context/CompanyContext';
 import { useLock } from '../context/LockContext';
 import { useToast } from '../context/ToastContext';
@@ -41,6 +42,9 @@ export const Payments = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [receiptModalPayment, setReceiptModalPayment] = useState(null);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [payments, setPayments] = useState([]);
@@ -133,6 +137,57 @@ export const Payments = () => {
     const start = (safePage - 1) * pageSize;
     return filteredPayments.slice(start, start + pageSize);
   }, [filteredPayments, safePage, pageSize]);
+
+  // Check if all rows on current page are selected
+  const allCurrentPageSelected = useMemo(() => {
+    if (paginatedPayments.length === 0) return false;
+    return paginatedPayments.every((p) => selectedRowIds.includes(p.id));
+  }, [paginatedPayments, selectedRowIds]);
+
+  const handleHeaderSelectAll = () => {
+    const pageIds = paginatedPayments.map((p) => p.id);
+    if (allCurrentPageSelected) {
+      setSelectedRowIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedRowIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleToggleRowSelect = (id) => {
+    setSelectedRowIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSingle = async () => {
+    if (!paymentToDelete) return;
+    try {
+      await apiClient.delete(ENDPOINTS.PAYMENTS.DELETE(paymentToDelete.id));
+      setPayments((prev) => prev.filter((p) => p.id !== paymentToDelete.id));
+      setSelectedRowIds((prev) => prev.filter((id) => id !== paymentToDelete.id));
+      toast.success('Payment record deleted successfully.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete payment');
+    } finally {
+      setPaymentToDelete(null);
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedRowIds.length === 0) return;
+    try {
+      const res = await apiClient.post(ENDPOINTS.PAYMENTS.BULK_DELETE, { ids: selectedRowIds });
+      if (res.success) {
+        setPayments((prev) => prev.filter((p) => !selectedRowIds.includes(p.id)));
+        toast.success(`Deleted ${selectedRowIds.length} payment records.`);
+        setSelectedRowIds([]);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete payment records');
+    } finally {
+      setIsBulkDeleteModalOpen(false);
+    }
+  };
 
   // Download Clean Sample Template (0 dummy data rows, company-specific)
   const handleDownloadTemplate = (format = 'xlsx', targetCompany = null) => {
@@ -512,10 +567,56 @@ export const Payments = () => {
 
       {/* Payments Ledger Table Container */}
       <div className="bg-white border border-gray-200/80 shadow-xs rounded-xl flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Bulk Action Bar */}
+        {selectedRowIds.length > 0 && (
+          <div className="bg-[#FFF1F2] border-b border-[#FECDD3] px-3.5 py-1.5 flex items-center justify-between gap-3 text-xs shrink-0 transition-all">
+            <div className="flex items-center gap-2 text-[#9F1239] font-bold">
+              <span>{selectedRowIds.length} payment record{selectedRowIds.length > 1 ? 's' : ''} selected</span>
+              {selectedRowIds.length < totalItems && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowIds(filteredPayments.map((p) => p.id))}
+                  className="text-[11px] underline hover:text-[#881337] cursor-pointer ml-1 font-semibold"
+                >
+                  Select all {totalItems} rows across all pages
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRowIds([])}
+                className="px-2 py-0.5 rounded text-[11px] font-semibold text-gray-600 hover:bg-rose-100 cursor-pointer"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                disabled={!canEdit}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-[#E11D48] text-white hover:bg-[#BE123C] shadow-2xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedRowIds.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
               <tr className="bg-[#F8FAFC] text-gray-900 font-bold border-b border-gray-200 select-none">
+                <th className="py-2 px-2 text-center w-8 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={allCurrentPageSelected && paginatedPayments.length > 0}
+                    onChange={handleHeaderSelectAll}
+                    disabled={!canEdit || paginatedPayments.length === 0}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:cursor-not-allowed accent-rose-600"
+                    title="Select All on this page"
+                  />
+                </th>
                 <th className="py-2 px-3 whitespace-nowrap">Transaction & Date</th>
                 <th className="py-2 px-3 whitespace-nowrap">Rider Details</th>
                 <th className="py-2 px-3 whitespace-nowrap">Company</th>
@@ -524,20 +625,20 @@ export const Payments = () => {
                 <th className="py-2 px-3 text-right text-emerald-900 bg-emerald-50/20 whitespace-nowrap">Final Disbursed</th>
                 <th className="py-2 px-3 text-center whitespace-nowrap">Status</th>
                 <th className="py-2 px-3 whitespace-nowrap">Remark</th>
-                <th className="py-2 px-2 text-center whitespace-nowrap">Receipt</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-400">
+                  <td colSpan={10} className="text-center py-12 text-gray-400">
                     <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-primary-500 border-t-transparent mr-2" />
                     Loading payment records...
                   </td>
                 </tr>
               ) : paginatedPayments.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-16 text-gray-400">
+                  <td colSpan={10} className="text-center py-16 text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-1.5">
                       <Receipt className="w-8 h-8 text-gray-300 stroke-[1.25]" />
                       <p className="font-semibold text-gray-700 text-xs">No payment records found</p>
@@ -549,7 +650,7 @@ export const Payments = () => {
                 paginatedPayments.map((p) => {
                   const companyObj = companies.find((c) => c.id === p.companyId || c._id === p.companyId);
                   const compName = companyObj?.name || p.companyName || 'Company';
-                  const compColor = companyObj?.color || '#E53935';
+                  const isSelected = selectedRowIds.includes(p.id);
 
                   const payoutVal = Number(p.payout) || 0;
                   const lossVal = Number(p.loss) || 0;
@@ -558,7 +659,18 @@ export const Payments = () => {
                   const finalVal = Number(p.finalPayout) || (payoutVal - totalDed);
 
                   return (
-                    <tr key={p.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
+                    <tr key={p.id} className={`hover:bg-[#F8FAFC]/80 transition-colors ${isSelected ? 'bg-rose-50/40' : ''}`}>
+                      {/* Checkbox */}
+                      <td className="py-1 px-2 text-center whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleRowSelect(p.id)}
+                          disabled={!canEdit}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:cursor-not-allowed accent-rose-600"
+                        />
+                      </td>
+
                       {/* Transaction ID & Date */}
                       <td className="py-1.5 px-3">
                         <div className="flex items-center gap-1.5">
@@ -637,16 +749,32 @@ export const Payments = () => {
                         {p.remark || 'Direct Bank Disbursement'}
                       </td>
 
-                      {/* Receipt Action */}
-                      <td className="py-1.5 px-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setReceiptModalPayment(p)}
-                          className="p-1 rounded text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors cursor-pointer inline-flex items-center justify-center"
-                          title="View Payment Receipt"
-                        >
-                          <FileCheck2 className="w-3.5 h-3.5" />
-                        </button>
+                      {/* Actions: Receipt + Delete */}
+                      <td className="py-1.5 px-2 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setReceiptModalPayment(p)}
+                            className="p-1 rounded text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors cursor-pointer inline-flex items-center justify-center"
+                            title="View Payment Receipt"
+                          >
+                            <FileCheck2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!canEdit) {
+                                notifyLocked('delete payment');
+                                return;
+                              }
+                              setPaymentToDelete(p);
+                            }}
+                            className="p-1 rounded text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer inline-flex items-center justify-center"
+                            title="Delete Payment Record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -801,6 +929,28 @@ export const Payments = () => {
             p.remark || '',
           ];
         })}
+      />
+
+      {/* Single Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={!!paymentToDelete}
+        onClose={() => setPaymentToDelete(null)}
+        onConfirm={handleDeleteSingle}
+        title="Delete Payment Record"
+        message={`Are you sure you want to delete payment record for "${paymentToDelete?.riderName || 'this rider'}"? This action cannot be undone.`}
+        confirmLabel="Yes, Delete"
+        variant="danger"
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Selected Payment Records"
+        message={`Are you sure you want to delete ${selectedRowIds.length} selected payment records? This action cannot be undone.`}
+        confirmLabel={`Yes, Delete ${selectedRowIds.length} Records`}
+        variant="danger"
       />
     </div>
   );

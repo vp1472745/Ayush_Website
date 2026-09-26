@@ -88,3 +88,25 @@ export const formatCurrency = (amount) => {
 export const formatNumber = (num) => {
   return new Intl.NumberFormat('en-IN').format(Number(num) || 0);
 };
+
+/**
+ * Format numbers compactly (e.g. 1K, 35K, 1L, 10L)
+ */
+export const formatCompactNumber = (value) => {
+  const num = Number(value) || 0;
+  if (num === 0) return '0';
+  const abs = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
+
+  if (abs >= 100000) {
+    const l = abs / 100000;
+    return `${sign}${Number(l.toFixed(1))}L`;
+  }
+  if (abs >= 1000) {
+    const k = abs / 1000;
+    return `${sign}${Number(k.toFixed(1))}K`;
+  }
+  return `${sign}${Math.round(abs)}`;
+};
+
+

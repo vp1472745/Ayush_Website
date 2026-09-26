@@ -46,16 +46,15 @@ export const createLossDetail = async (req, res, next) => {
       ayushRemark,
     } = req.body;
 
-    if (!companyId || !month) {
+    if (!month) {
       res.status(400);
-      throw new Error('Company and Month are required.');
+      throw new Error('Month is required.');
     }
 
     const rawStat = (status || '').toString().trim().toLowerCase();
     const validStat = (rawStat === 'recovered' || rawStat === 'recover') ? 'Recovered' : 'Not Recovered';
 
-    const lossItem = new LossDetail({
-      companyId,
+    const lossItemData = {
       month,
       trackingId: trackingId || `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`,
       price: Number(price) || 0,
@@ -63,10 +62,16 @@ export const createLossDetail = async (req, res, next) => {
       riderName: riderName ? riderName.trim() : '',
       status: validStat,
       remark: (remark ?? ayushRemark ?? '').toString().trim(),
-    });
+    };
+    if (companyId) {
+      lossItemData.companyId = companyId;
+    }
 
+    const lossItem = new LossDetail(lossItemData);
     const saved = await lossItem.save();
-    await saved.populate('companyId', 'name code');
+    if (saved.companyId) {
+      await saved.populate('companyId', 'name code');
+    }
 
     res.status(201).json({
       success: true,
@@ -85,17 +90,16 @@ export const bulkImportLossDetails = async (req, res, next) => {
   try {
     const { companyId, month, rows } = req.body;
 
-    if (!companyId || !month || !Array.isArray(rows) || rows.length === 0) {
+    if (!month || !Array.isArray(rows) || rows.length === 0) {
       res.status(400);
-      throw new Error('Valid companyId, month, and array of loss rows are required.');
+      throw new Error('Month and array of loss rows are required.');
     }
 
     const docsToInsert = rows.map((r, index) => {
       const rawStat = (r.status || '').toString().trim().toLowerCase();
       const validStat = (rawStat === 'recovered' || rawStat === 'recover') ? 'Recovered' : 'Not Recovered';
 
-      return {
-        companyId,
+      const doc = {
         month,
         trackingId: r.trackingId || `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`,
         price: Number(r.price) || 0,
@@ -104,6 +108,8 @@ export const bulkImportLossDetails = async (req, res, next) => {
         status: validStat,
         remark: (r.remark ?? r.ayushRemark ?? '').toString().trim(),
       };
+      if (companyId) doc.companyId = companyId;
+      return doc;
     });
 
     const inserted = await LossDetail.insertMany(docsToInsert);

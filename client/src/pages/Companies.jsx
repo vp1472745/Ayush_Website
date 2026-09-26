@@ -30,7 +30,7 @@ import {
 
 export const Companies = () => {
   const navigate = useNavigate();
-  const { companies, addCompany, updateCompany, deleteCompany, toggleCompanyStatus } = useCompany();
+  const { companies, addCompany, updateCompany, deleteCompany, bulkDeleteCompanies, toggleCompanyStatus } = useCompany();
   const { riders } = useRiders();
 
   // Filters
@@ -42,6 +42,8 @@ export const Companies = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
 
   // Form State (Phone removed)
@@ -148,6 +150,15 @@ export const Companies = () => {
     if (success) {
       setIsDeleteModalOpen(false);
       setSelectedCompany(null);
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedRowIds.length === 0) return;
+    const success = await bulkDeleteCompanies(selectedRowIds);
+    if (success) {
+      setSelectedRowIds([]);
+      setIsBulkDeleteModalOpen(false);
     }
   };
 
@@ -427,6 +438,15 @@ export const Companies = () => {
           emptyDescription="Click Add Company to register a new logistics delivery partner."
           emptyActionLabel="+ Add Company"
           onEmptyAction={handleOpenAdd}
+          enableSelection={true}
+          selectedRowIds={selectedRowIds}
+          onSelectRow={(id) => {
+            setSelectedRowIds((prev) =>
+              prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+            );
+          }}
+          onSelectAll={(newIds) => setSelectedRowIds(newIds)}
+          onBulkDelete={() => setIsBulkDeleteModalOpen(true)}
         />
       )}
 
@@ -757,6 +777,16 @@ export const Companies = () => {
         title="Delete Company"
         message={`Are you sure you want to delete "${selectedCompany?.name}"?`}
         confirmLabel="Delete Company"
+        variant="danger"
+      />
+
+      <ConfirmationModal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Selected Companies"
+        message={`Are you sure you want to delete ${selectedRowIds.length} selected company records? This action cannot be undone.`}
+        confirmLabel={`Yes, Delete ${selectedRowIds.length} Companies`}
         variant="danger"
       />
     </div>

@@ -818,26 +818,62 @@ export const PaymentPayout = () => {
           </div>
         </div>
 
+        {/* Bulk Action Bar */}
+        {selectedRowIds.length > 0 && (
+          <div className="bg-[#FFF1F2] border-b border-[#FECDD3] px-3.5 py-1.5 flex items-center justify-between gap-3 text-xs shrink-0 transition-all">
+            <div className="flex items-center gap-2 text-[#9F1239] font-bold">
+              <span>{selectedRowIds.length} payment record{selectedRowIds.length > 1 ? 's' : ''} selected</span>
+              {selectedRowIds.length < totalItems && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedRowIds(displayedRows.map((r) => r.id))}
+                  className="text-[11px] underline hover:text-[#881337] cursor-pointer ml-1 font-semibold"
+                >
+                  Select all {totalItems} rows across all pages
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRowIds([])}
+                className="px-2 py-0.5 rounded text-[11px] font-semibold text-gray-600 hover:bg-rose-100 cursor-pointer"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                disabled={!canEdit}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-[#E11D48] text-white hover:bg-[#BE123C] shadow-2xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedRowIds.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table View */}
         <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-[#F8FAFC]">
               <tr className="bg-[#F8FAFC] border-b border-gray-200/80 text-[11px] font-semibold text-gray-500 uppercase tracking-wider select-none">
-                <th className="py-3.5 px-4 w-10 text-center">
+                <th className="py-2 px-3 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={allCurrentPageSelected}
                     onChange={handleHeaderSelectAll}
-                    className="w-4 h-4 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
+                    className="w-3.5 h-3.5 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
                   />
                 </th>
-                <th className="py-3.5 px-4 min-w-[180px]">Company</th>
-                <th className="py-3.5 px-4 min-w-[200px]">Cycle</th>
-                <th className="py-3.5 px-4 min-w-[150px]">Amount</th>
-                <th className="py-3.5 px-4 min-w-[150px]">Loss</th>
-                <th className="py-3.5 px-4 min-w-[160px]">Final Payable</th>
-                <th className="py-3.5 px-4 min-w-[180px]">Remark</th>
-                <th className="py-3.5 px-4 w-16 text-center">Action</th>
+                <th className="py-2 px-3 min-w-[150px]">Company</th>
+                <th className="py-2 px-3 min-w-[170px]">Cycle</th>
+                <th className="py-2 px-3 min-w-[130px]">Amount</th>
+                <th className="py-2 px-3 min-w-[130px]">Loss</th>
+                <th className="py-2 px-3 min-w-[140px]">Final Payable</th>
+                <th className="py-2 px-3 min-w-[160px]">Remark</th>
+                <th className="py-2 px-3 w-16 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
@@ -871,27 +907,27 @@ export const PaymentPayout = () => {
                       className={`hover:bg-gray-50/70 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}
                     >
                       {/* Checkbox */}
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-1.5 px-3 text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleRow(row.id)}
-                          className="w-4 h-4 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
+                          className="w-3.5 h-3.5 text-black rounded border-gray-300 focus:ring-black cursor-pointer"
                         />
                       </td>
 
                       {/* Company Dropdown / Badge */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-1.5 px-3">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs tracking-wide uppercase">
-                            <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-bold text-xs tracking-wide uppercase">
+                            <Building2 className="w-3 h-3 text-blue-600" />
                             {row.companyName}
                           </span>
                         </div>
                       </td>
 
                       {/* Dynamic Cycle Dropdown (allows row's current cycle + unused cycles) */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-1.5 px-3">
                         {(() => {
                           const allOpts = getCycleOptions(row.companyName);
                           const existingOtherCycles = rows
@@ -911,7 +947,7 @@ export const PaymentPayout = () => {
                       </td>
 
                       {/* Amount */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-1.5 px-3">
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
                           <input
@@ -921,13 +957,13 @@ export const PaymentPayout = () => {
                             placeholder="0"
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'amount', e.target.value)}
-                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-gray-900 focus:outline-none transition-all"
+                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-0.5 text-xs font-bold text-gray-900 focus:outline-none transition-all"
                           />
                         </div>
                       </td>
 
                       {/* Loss */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-1.5 px-3">
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
                           <input
@@ -937,20 +973,20 @@ export const PaymentPayout = () => {
                             placeholder="0"
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCellChange(row.id, 'loss', e.target.value)}
-                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-1 text-xs font-bold text-red-600 focus:outline-none transition-all"
+                            className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg pl-6 pr-2 py-0.5 text-xs font-bold text-red-600 focus:outline-none transition-all"
                           />
                         </div>
                       </td>
 
                       {/* Final Payable */}
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <td className="py-1.5 px-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           {formatCurrency(finalPay)}
                         </span>
                       </td>
 
                       {/* Remark */}
-                      <td className="py-3 px-4">
+                      <td className="py-1.5 px-3">
                         <input
                           type="text"
                           value={row.remarks || row.remark || ''}
@@ -958,12 +994,12 @@ export const PaymentPayout = () => {
                           placeholder="Enter remark"
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => handleCellChange(row.id, 'remarks', e.target.value)}
-                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2.5 py-1 text-xs font-medium text-gray-800 focus:outline-none transition-all"
+                          className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-black focus:bg-white rounded-lg px-2 py-0.5 text-xs font-medium text-gray-800 focus:outline-none transition-all"
                         />
                       </td>
 
                       {/* Action */}
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-1.5 px-3 text-center">
                         <button
                           type="button"
                           onClick={() => {
@@ -973,7 +1009,7 @@ export const PaymentPayout = () => {
                             }
                             setRowToDelete(row);
                           }}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Delete Record"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

@@ -180,8 +180,8 @@ export const Header = ({ onOpenMobileSidebar }) => {
 
       {/* MIDDLE SCROLLABLE SECTION: Company + Financial Year + Month Filter + Edit/Lock Toggle + Refresh */}
       <div className="flex-1 flex items-center gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto no-scrollbar py-0.5 min-w-0">
-        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Settings, Hub Expenses, Advanced & Profile */}
-        {!['/hub-expenses', '/expenses', '/advanced', '/settings', '/profile'].includes(location.pathname) && (
+        {/* Global Company Filter Dropdown (Active Companies Only) - Hidden on Settings, Hub Expenses, Loss & Recovery, Advanced & Profile */}
+        {!['/hub-expenses', '/expenses', '/loss-details', '/loss-and-recovery', '/advanced', '/settings', '/profile'].includes(location.pathname) && (
           <CustomDropdown
             value={selectedCompanyFilter || 'all'}
             onChange={setSelectedCompanyFilter}

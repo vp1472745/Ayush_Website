@@ -65,14 +65,15 @@ export const LossDetails = () => {
 
   const currentCompany = activeCompanies.find((c) => c.id === selectedCompanyFilter) || activeCompanies[0];
 
-  // Fetch loss items from backend
+  // Fetch loss items from backend (Hub-wide for selected month/period)
   const fetchLossDetails = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       setLoading(true);
       const params = {};
-      if (selectedCompanyFilter !== 'all') params.companyId = selectedCompanyFilter;
-      if (selectedMonthFilter !== 'all') params.month = selectedMonthFilter;
+      if (selectedMonthFilter && selectedMonthFilter !== 'all') {
+        params.month = selectedMonthFilter;
+      }
 
       const res = await apiClient.get(ENDPOINTS.LOSS_DETAILS.GET_ALL, { params });
       if (res.success && Array.isArray(res.data)) {
@@ -88,7 +89,7 @@ export const LossDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter]);
+  }, [isAuthenticated, selectedMonthFilter]);
 
   useEffect(() => {
     fetchLossDetails();
@@ -182,14 +183,7 @@ export const LossDetails = () => {
       return;
     }
 
-    const targetCompanyId = selectedCompanyFilter === 'all'
-      ? (activeCompanies[0]?.id || activeCompanies[0]?._id)
-      : selectedCompanyFilter;
-
-    if (!targetCompanyId) {
-      toast.error('Please create or select an active company first.');
-      return;
-    }
+    const targetCompanyId = activeCompanies[0]?.id || activeCompanies[0]?._id;
 
     try {
       const newLossPayload = {
@@ -342,14 +336,7 @@ export const LossDetails = () => {
           return;
         }
 
-        const targetCompanyId = selectedCompanyFilter === 'all'
-          ? (activeCompanies[0]?.id || activeCompanies[0]?._id)
-          : selectedCompanyFilter;
-
-        if (!targetCompanyId) {
-          toast.error('Please create or select an active company first.');
-          return;
-        }
+        const targetCompanyId = activeCompanies[0]?.id || activeCompanies[0]?._id;
 
         const headerRow = (rawJson[0] || []).map((h) => String(h).toLowerCase().trim());
         const findColIdx = (possibleNames) => {
