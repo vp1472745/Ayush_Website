@@ -148,7 +148,7 @@ export const Dashboard = () => {
         apiClient.get(ENDPOINTS.MY_PAYMENTS.GET_ALL, { params: paymentParams }),
         apiClient.get(ENDPOINTS.RIDER_PAYOUTS.GET_ALL, { params: monthParams }),
         apiClient.get(ENDPOINTS.HUB_EXPENSES.GET_ALL, { params: monthParams }),
-        apiClient.get(ENDPOINTS.LOSS_DETAILS.GET_ALL, { params: monthParams }),
+        apiClient.get(ENDPOINTS.LOSS_DETAILS.GET_ALL, { params: paymentParams }),
         apiClient.get(ENDPOINTS.ADVANCES.GET_ALL),
       ]);
 
@@ -224,10 +224,13 @@ export const Dashboard = () => {
       .reduce((s, l) => s + (Number(l.price) || 0), 0);
   }, [lossDetails]);
 
-  // Filtered Loss Details (all hub losses available for inspection)
+  // Filtered Loss Details (Direct company losses or shared losses without companyId)
   const filteredLossDetails = useMemo(() => {
-    return lossDetails;
-  }, [lossDetails]);
+    if (isAllCompanies) return lossDetails;
+    return lossDetails.filter((l) => {
+      return !l.companyId || isCompanyMatch(l.companyId, selectedCompanyFilter);
+    });
+  }, [lossDetails, selectedCompanyFilter, isAllCompanies]);
 
   // Raw Total Hub Expenses across the entire hub
   const rawTotalHubExpenses = useMemo(() => {
@@ -310,26 +313,52 @@ export const Dashboard = () => {
     return directExp + Math.round(sharedExp);
   }, [isAllCompanies, rawTotalHubExpenses, activeCompanies, hubExpenses, selectedCompanyFilter]);
 
-  // 4. Losses & Deductions
-  // When 'All' is selected, shows total hub loss (₹5,000).
-  // When a specific franchise is selected, shows proportional allocated share (e.g. 1,667 for Shadowfax), exactly like Hub Expenses.
-  const totalLoss = useMemo(() => {
-    if (isAllCompanies) return rawTotalLoss;
-    const numCompanies = activeCompanies.length || 1;
-    return Math.round(rawTotalLoss / numCompanies);
-  }, [isAllCompanies, rawTotalLoss, activeCompanies]);
+  // 4. Losses & Deductions (Filter-wise: Direct company loss + proportional shared overhead share)
+  const { totalLoss, unrecoveredLoss, recoveredLoss, hasSharedLoss } = useMemo(() => {
+    if (isAllCompanies) {
+      return {
+        totalLoss: rawTotalLoss,
+        unrecoveredLoss: rawTotalUnrecoveredLoss,
+        recoveredLoss: rawTotalRecoveredLoss,
+        hasSharedLoss: false,
+      };
+    }
 
-  const unrecoveredLoss = useMemo(() => {
-    if (isAllCompanies) return rawTotalUnrecoveredLoss;
     const numCompanies = activeCompanies.length || 1;
-    return Math.round(rawTotalUnrecoveredLoss / numCompanies);
-  }, [isAllCompanies, rawTotalUnrecoveredLoss, activeCompanies]);
+    const directLosses = lossDetails.filter((l) => isCompanyMatch(l.companyId, selectedCompanyFilter));
+    const sharedLosses = lossDetails.filter((l) => !l.companyId);
 
-  const recoveredLoss = useMemo(() => {
-    if (isAllCompanies) return rawTotalRecoveredLoss;
-    const numCompanies = activeCompanies.length || 1;
-    return Math.round(rawTotalRecoveredLoss / numCompanies);
-  }, [isAllCompanies, rawTotalRecoveredLoss, activeCompanies]);
+    const directTot = directLosses.reduce((s, l) => s + (Number(l.price) || 0), 0);
+    const directUnrec = directLosses
+      .filter((l) => (l.status || '').toLowerCase() !== 'recovered')
+      .reduce((s, l) => s + (Number(l.price) || 0), 0);
+    const directRec = directLosses
+      .filter((l) => (l.status || '').toLowerCase() === 'recovered')
+      .reduce((s, l) => s + (Number(l.price) || 0), 0);
+
+    const sharedTot = sharedLosses.reduce((s, l) => s + (Number(l.price) || 0), 0);
+    const sharedUnrec = sharedLosses
+      .filter((l) => (l.status || '').toLowerCase() !== 'recovered')
+      .reduce((s, l) => s + (Number(l.price) || 0), 0);
+    const sharedRec = sharedLosses
+      .filter((l) => (l.status || '').toLowerCase() === 'recovered')
+      .reduce((s, l) => s + (Number(l.price) || 0), 0);
+
+    return {
+      totalLoss: directTot + Math.round(sharedTot / numCompanies),
+      unrecoveredLoss: directUnrec + Math.round(sharedUnrec / numCompanies),
+      recoveredLoss: directRec + Math.round(sharedRec / numCompanies),
+      hasSharedLoss: sharedTot > 0,
+    };
+  }, [
+    isAllCompanies,
+    rawTotalLoss,
+    rawTotalUnrecoveredLoss,
+    rawTotalRecoveredLoss,
+    lossDetails,
+    selectedCompanyFilter,
+    activeCompanies,
+  ]);
 
   // Raw Total Advances across the entire hub
   const rawTotalAdvanceGiven = useMemo(() => {
@@ -494,15 +523,25 @@ export const Dashboard = () => {
         ? 0
         : compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
 
-      // Real unrecovered loss (divided equally across active companies, just like hub expenses)
-      let compLoss = 0;
+      // Real unrecovered loss (direct franchise loss + shared overhead share)
+      const directLoss = lossDetails
+        .filter((l) => isCompanyMatch(l.companyId, compId) && (l.status || '').toLowerCase() !== 'recovered')
+        .reduce((s, l) => s + (Number(l.price) || 0), 0);
+
+      const rawSharedLoss = lossDetails
+        .filter((l) => !l.companyId && (l.status || '').toLowerCase() !== 'recovered')
+        .reduce((s, l) => s + (Number(l.price) || 0), 0);
+
+      let compSharedLoss = 0;
       if (isAllCompanies && idx === targetCompanies.length - 1) {
-        // Last company takes remainder so sum is exactly rawTotalUnrecoveredLoss
-        const baseShare = Math.round(rawTotalUnrecoveredLoss / numCompanies);
-        compLoss = Math.max(0, rawTotalUnrecoveredLoss - baseShare * (numCompanies - 1));
+        // Last company takes remainder so sum is EXACTLY rawSharedLoss
+        const baseShare = Math.round(rawSharedLoss / numCompanies);
+        compSharedLoss = Math.max(0, rawSharedLoss - baseShare * (numCompanies - 1));
       } else {
-        compLoss = Math.round(rawTotalUnrecoveredLoss / numCompanies);
+        compSharedLoss = Math.round(rawSharedLoss / numCompanies);
       }
+
+      const compLoss = directLoss + compSharedLoss;
 
       // Real hub expenses (direct + shared proportion with exact remainder balancing)
       const directExp = hubExpenses
@@ -734,7 +773,7 @@ export const Dashboard = () => {
         icon: AlertTriangle,
         iconColor: 'text-rose-500',
         title: `${formatCurrency(unrecoveredLoss)} Loss Recovery Pending`,
-        value: `${lossStats.pending} Incidents`,
+        value: `${lossStats.pending} Incident${lossStats.pending === 1 ? '' : 's'}`,
         path: '/loss-details',
       });
     }
@@ -965,13 +1004,24 @@ export const Dashboard = () => {
                       </span>
                       <strong className="text-gray-900 whitespace-nowrap tabular-nums">{formatCurrency(totalAdvanceGiven)}</strong>
                     </div>
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="flex items-center gap-1 whitespace-nowrap">
-                        Loss / Deduction
-                        {!isAllCompanies && (
-                          <span className="text-[9px] text-rose-600 font-medium">(Div)</span>
+                    <div
+                      onClick={() => navigate('/loss-details')}
+                      className="flex items-center justify-between gap-1 hover:bg-rose-50/70 p-1 -mx-1 rounded cursor-pointer transition-colors"
+                      title="Click to view Loss & Recovery Details"
+                    >
+                      <div className="min-w-0">
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          Loss / Deduction
+                          {!isAllCompanies && hasSharedLoss && (
+                            <span className="text-[9px] text-amber-600 font-medium">(Div)</span>
+                          )}
+                        </span>
+                        {recoveredLoss > 0 && (
+                          <span className="text-[9px] text-emerald-600 font-semibold block leading-tight">
+                            ({formatCurrency(recoveredLoss)} recovered)
+                          </span>
                         )}
-                      </span>
+                      </div>
                       <strong className="text-gray-900 whitespace-nowrap tabular-nums">{formatCurrency(unrecoveredLoss)}</strong>
                     </div>
                   </div>
@@ -1749,9 +1799,9 @@ export const Dashboard = () => {
                   <AlertTriangle className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-800 leading-tight block">Loss Summary</span>
+                  <span className="text-xs font-bold text-slate-800 leading-tight block">Loss & Recovery</span>
                   <span className="text-[10px] text-slate-400 font-medium">
-                    {isAllCompanies ? 'Incidents & Recoveries' : 'Divided Loss Share'}
+                    {isAllCompanies ? 'Incidents & Recoveries' : `${selectedCompany?.name || 'Franchise'} Loss Details`}
                   </span>
                 </div>
               </div>
@@ -1781,16 +1831,16 @@ export const Dashboard = () => {
           </div>
 
           <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500">
-            {isAllCompanies ? (
+            <span>{lossStats.total} Incident{lossStats.total !== 1 ? 's' : ''}</span>
+            <span>•</span>
+            <span className="text-emerald-600">{lossStats.recovered} Recovered</span>
+            <span>•</span>
+            <span className="text-rose-500">{lossStats.pending} Pending</span>
+            {!isAllCompanies && hasSharedLoss && (
               <>
-                <span>{lossStats.total} Incidents</span>
                 <span>•</span>
-                <span className="text-emerald-600">{lossStats.recovered} Recovered</span>
-                <span>•</span>
-                <span className="text-rose-500">{lossStats.pending} Pending</span>
+                <span className="text-amber-600">(includes shared loss)</span>
               </>
-            ) : (
-              <span>Divided share (1/{activeCompanies.length || 1} of {formatCurrency(rawTotalLoss)})</span>
             )}
           </div>
         </div>

@@ -13,6 +13,17 @@ const lossDetailSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    financialYear: {
+      type: String,
+      default: '',
+      trim: true,
+      index: true,
+    },
+    cycle: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     trackingId: {
       type: String,
       default: '',

@@ -63,16 +63,22 @@ export const LossDetails = () => {
     return companies.filter((c) => c.status === 'Active');
   }, [companies]);
 
-  const currentCompany = activeCompanies.find((c) => c.id === selectedCompanyFilter) || activeCompanies[0];
+  const currentCompany = activeCompanies.find((c) => (c.id || c._id) === selectedCompanyFilter) || activeCompanies[0];
 
-  // Fetch loss items from backend (Hub-wide for selected month/period)
+  // Fetch loss items from backend (Filtered by selected company and month)
   const fetchLossDetails = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       setLoading(true);
       const params = {};
+      if (selectedCompanyFilter && selectedCompanyFilter !== 'all') {
+        params.companyId = selectedCompanyFilter;
+      }
       if (selectedMonthFilter && selectedMonthFilter !== 'all') {
         params.month = selectedMonthFilter;
+      }
+      if (selectedFinancialYear && selectedFinancialYear !== 'all') {
+        params.financialYear = selectedFinancialYear;
       }
 
       const res = await apiClient.get(ENDPOINTS.LOSS_DETAILS.GET_ALL, { params });
@@ -81,6 +87,9 @@ export const LossDetails = () => {
           ...item,
           id: item._id || item.id,
           riderName: item.riderName || '',
+          companyId: item.companyId?._id || item.companyId?.id || item.companyId,
+          companyName: item.companyId?.name || '',
+          companyCode: item.companyId?.code || '',
         }));
         setRows(formatted);
       }
@@ -89,7 +98,7 @@ export const LossDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, selectedMonthFilter]);
+  }, [isAuthenticated, selectedCompanyFilter, selectedMonthFilter, selectedFinancialYear]);
 
   useEffect(() => {
     fetchLossDetails();
@@ -110,18 +119,22 @@ export const LossDetails = () => {
     },
   ];
 
-  // Filtered rows for search
+  // Filtered rows for search (searches trackingId, company, reason, riderName, remark, status)
   const displayedRows = useMemo(() => {
     return rows.filter((r) => {
+      const compId = r.companyId?._id || r.companyId?.id || (typeof r.companyId === 'string' ? r.companyId : '');
+      const compName = r.companyName || (companies.find((c) => (c.id || c._id) === compId)?.name) || '';
+
       const matchSearch = !searchQuery || 
         r.trackingId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        compName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.reason?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.riderName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.remark?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.status?.toLowerCase().includes(searchQuery.toLowerCase());
       return matchSearch;
     });
-  }, [rows, searchQuery]);
+  }, [rows, searchQuery, companies]);
 
   // Pagination calculation
   const totalItems = displayedRows.length;
@@ -165,7 +178,18 @@ export const LossDetails = () => {
     }
 
     setRows((prev) =>
-      prev.map((r) => (r.id === rowId ? { ...r, [field]: cleanValue } : r))
+      prev.map((r) => {
+        if (r.id !== rowId) return r;
+        const updated = { ...r, [field]: cleanValue };
+        if (field === 'companyId') {
+          const comp = companies.find((c) => (c.id || c._id) === cleanValue);
+          if (comp) {
+            updated.companyName = comp.name;
+            updated.companyCode = comp.code;
+          }
+        }
+        return updated;
+      })
     );
 
     try {
@@ -183,12 +207,15 @@ export const LossDetails = () => {
       return;
     }
 
-    const targetCompanyId = activeCompanies[0]?.id || activeCompanies[0]?._id;
+    const targetCompanyId = (selectedCompanyFilter && selectedCompanyFilter !== 'all')
+      ? selectedCompanyFilter
+      : (activeCompanies[0]?.id || activeCompanies[0]?._id);
 
     try {
       const newLossPayload = {
         companyId: targetCompanyId,
         month: selectedMonthFilter,
+        financialYear: selectedFinancialYear,
         trackingId: `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`,
         price: 0,
         reason: 'Parcel damage/loss',
@@ -199,7 +226,16 @@ export const LossDetails = () => {
 
       const res = await apiClient.post(ENDPOINTS.LOSS_DETAILS.CREATE, newLossPayload);
       if (res.success && res.data) {
-        const created = { ...res.data, id: res.data._id, riderName: res.data.riderName || '', remark: res.data.remark || '' };
+        const comp = companies.find((c) => (c.id || c._id) === targetCompanyId);
+        const created = {
+          ...res.data,
+          id: res.data._id || res.data.id,
+          riderName: res.data.riderName || '',
+          remark: res.data.remark || '',
+          companyId: res.data.companyId?._id || res.data.companyId?.id || res.data.companyId || targetCompanyId,
+          companyName: res.data.companyId?.name || comp?.name || '',
+          companyCode: res.data.companyId?.code || comp?.code || '',
+        };
         setRows((prev) => [created, ...prev]);
         toast.success('New loss entry added.');
       }
@@ -259,17 +295,24 @@ export const LossDetails = () => {
     }
   };
 
-  const lossHeaders = ['Tracking ID', 'Price', 'Reason', 'Rider Name', 'Status', 'Remark'];
+  const lossHeaders = ['Tracking ID', 'Company', 'Price', 'Reason', 'Rider Name', 'Status', 'Remark'];
 
   const getExportData = () => {
-    return displayedRows.map((r) => [
-      r.trackingId || '',
-      r.price || 0,
-      r.reason || '',
-      r.riderName || '',
-      r.status || 'Not Recovered',
-      r.remark || '',
-    ]);
+    return displayedRows.map((r) => {
+      const compId = r.companyId?._id || r.companyId?.id || (typeof r.companyId === 'string' ? r.companyId : '');
+      const comp = companies.find((c) => (c.id || c._id) === compId);
+      const compName = r.companyName || comp?.name || (currentCompany?.name || 'Company');
+
+      return [
+        r.trackingId || '',
+        compName,
+        r.price || 0,
+        r.reason || '',
+        r.riderName || '',
+        r.status || 'Not Recovered',
+        r.remark || '',
+      ];
+    });
   };
 
   // Export CSV File
@@ -336,13 +379,16 @@ export const LossDetails = () => {
           return;
         }
 
-        const targetCompanyId = activeCompanies[0]?.id || activeCompanies[0]?._id;
+        const targetCompanyId = (selectedCompanyFilter && selectedCompanyFilter !== 'all')
+          ? selectedCompanyFilter
+          : (activeCompanies[0]?.id || activeCompanies[0]?._id);
 
         const headerRow = (rawJson[0] || []).map((h) => String(h).toLowerCase().trim());
         const findColIdx = (possibleNames) => {
           return headerRow.findIndex((h) => possibleNames.some((n) => h.includes(n)));
         };
 
+        const compIdx = findColIdx(['company', 'company name', 'client', 'courier']);
         const trkIdx = findColIdx(['tracking', 'tracking id', 'track']);
         const priceIdx = findColIdx(['price', 'amount', 'cost']);
         const reasonIdx = findColIdx(['reason', 'cause', 'description']);
@@ -355,15 +401,25 @@ export const LossDetails = () => {
           const row = rawJson[i];
           if (!row || row.every((c) => String(c).trim() === '')) continue;
 
+          let rowCompId = targetCompanyId;
+          if (compIdx >= 0 && row[compIdx]) {
+            const rawCompName = String(row[compIdx]).trim().toLowerCase();
+            const matched = companies.find(
+              (c) => c.name?.trim().toLowerCase() === rawCompName || c.code?.trim().toLowerCase() === rawCompName
+            );
+            if (matched) rowCompId = matched.id || matched._id;
+          }
+
           const trackingId = trkIdx >= 0 && row[trkIdx] ? String(row[trkIdx]).trim() : `TRK-${100000 + i}`;
-          const price = priceIdx >= 0 ? Number(row[priceIdx]) || 0 : Number(row[1]) || 0;
+          const price = priceIdx >= 0 ? Number(row[priceIdx]) || 0 : Number(row[2]) || 0;
           const reason = reasonIdx >= 0 && row[reasonIdx] ? String(row[reasonIdx]).trim() : 'Parcel damage/loss';
-          const riderName = riderIdx >= 0 && row[riderIdx] ? String(row[riderIdx]).trim() : (row[3] ? String(row[3]).trim() : '');
+          const riderName = riderIdx >= 0 && row[riderIdx] ? String(row[riderIdx]).trim() : '';
           const statusRaw = statusIdx >= 0 ? String(row[statusIdx] || '').trim().toLowerCase() : 'not recovered';
           const status = (statusRaw === 'recovered' || statusRaw === 'recover') ? 'Recovered' : 'Not Recovered';
-          const remark = remarkIdx >= 0 && row[remarkIdx] ? String(row[remarkIdx]).trim() : (row[5] ? String(row[5]).trim() : '');
+          const remark = remarkIdx >= 0 && row[remarkIdx] ? String(row[remarkIdx]).trim() : '';
 
           importedRows.push({
+            companyId: rowCompId,
             trackingId,
             price,
             reason,
@@ -564,6 +620,7 @@ export const LossDetails = () => {
                 </th>
                 <th className="py-1.5 px-2 text-center text-gray-500 font-semibold w-10 whitespace-nowrap">#</th>
                 <th className="py-1.5 px-3 whitespace-nowrap">Tracking ID</th>
+                {/* <th className="py-1.5 px-3 whitespace-nowrap">Company</th> */}
                 <th className="py-1.5 px-3 text-right whitespace-nowrap">Price</th>
                 <th className="py-1.5 px-3 whitespace-nowrap">Reason</th>
                 <th className="py-1.5 px-3 whitespace-nowrap">Rider Name</th>
@@ -577,7 +634,7 @@ export const LossDetails = () => {
             <tbody className="divide-y divide-gray-100">
               {paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-500">
+                  <td colSpan={10} className="py-12 text-center text-gray-500">
                     <div className="w-8 h-8 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center mx-auto mb-1.5">
                       <Inbox className="w-4 h-4" />
                     </div>
@@ -592,6 +649,9 @@ export const LossDetails = () => {
                   const isRecovered = row.status === 'Recovered';
                   const isSelected = selectedRowIds.includes(row.id);
                   const actualIndex = (safePage - 1) * pageSize + index + 1;
+                  const rowCompId = row.companyId?._id || row.companyId?.id || (typeof row.companyId === 'string' ? row.companyId : '');
+                  const currentCompObj = companies.find((c) => (c.id || c._id) === rowCompId);
+                  const rowCompName = row.companyName || currentCompObj?.name || 'SHADOWFAX';
 
                   return (
                     <tr
@@ -633,7 +693,38 @@ export const LossDetails = () => {
                         />
                       </td>
 
-                      {/* Col 2: Price (Editable) */}
+                      {/* Col 2: Company (Select in Edit Mode / Pill in View Mode) */}
+                      {/* <td className="py-1 px-2.5 whitespace-nowrap">
+                        {canEdit ? (
+                          <select
+                            value={rowCompId}
+                            onChange={(e) => handleCellChange(row.id, 'companyId', e.target.value)}
+                            className="px-2 py-1 text-xs font-bold text-gray-800 bg-white border border-gray-200 rounded-md hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 cursor-pointer shadow-2xs"
+                          >
+                            {(activeCompanies.length > 0 ? activeCompanies : companies).map((c) => (
+                              <option key={c.id || c._id} value={c.id || c._id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${
+                              rowCompName.toUpperCase().includes('SHADOW')
+                                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                : rowCompName.toUpperCase().includes('VALMO')
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                : rowCompName.toUpperCase().includes('XPRESS')
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-slate-50 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            {rowCompName}
+                          </span>
+                        )}
+                      </td> */}
+
+                      {/* Col 3: Price (Editable) */}
                       <td className="py-1 px-2.5 whitespace-nowrap text-right">
                         <div className="flex items-center justify-end gap-1">
                           <span className="text-gray-400 font-medium">₹</span>
@@ -649,7 +740,7 @@ export const LossDetails = () => {
                         </div>
                       </td>
 
-                      {/* Col 3: Reason (Editable) */}
+                      {/* Col 4: Reason (Editable) */}
                       <td className="py-1 px-2.5">
                         <input
                           type="text"
@@ -662,7 +753,7 @@ export const LossDetails = () => {
                         />
                       </td>
 
-                      {/* Col 4: Rider Name (Editable - added after Reason) */}
+                      {/* Col 5: Rider Name (Editable - added after Reason) */}
                       <td className="py-1 px-2.5 whitespace-nowrap">
                         <input
                           type="text"
@@ -675,7 +766,7 @@ export const LossDetails = () => {
                         />
                       </td>
 
-                      {/* Col 5: Status (Custom Dropdown) */}
+                      {/* Col 6: Status (Custom Dropdown) */}
                       <td className="py-1.5 px-2 text-center whitespace-nowrap">
                         <CustomDropdown
                           value={row.status || 'Not Recovered'}
@@ -688,7 +779,7 @@ export const LossDetails = () => {
                         />
                       </td>
 
-                      {/* Col 6: Remark (Editable) */}
+                      {/* Col 7: Remark (Editable) */}
                       <td className="py-1 px-2.5">
                         <input
                           type="text"
@@ -720,7 +811,7 @@ export const LossDetails = () => {
               {/* Spacer row only when rows < pageSize to absorb space cleanly */}
               {paginatedRows.length > 0 && paginatedRows.length < pageSize && (
                 <tr className="h-full border-none pointer-events-none">
-                  <td colSpan={9} className="p-0 border-none bg-transparent"></td>
+                  <td colSpan={10} className="p-0 border-none bg-transparent"></td>
                 </tr>
               )}
             </tbody>
@@ -735,6 +826,9 @@ export const LossDetails = () => {
                   </td>
                   <td className="py-1.5 px-3 whitespace-nowrap">
                     Total ({displayedRows.length} Loss Items)
+                  </td>
+                  <td className="py-1.5 px-3 whitespace-nowrap text-gray-500 text-xs font-semibold">
+                    {selectedCompanyFilter === 'all' ? 'All Companies' : (currentCompany?.name || 'Company')}
                   </td>
                   <td className="py-1.5 px-3 text-right whitespace-nowrap text-rose-700 font-extrabold text-xs">
                     {formatCurrency(totalLossPrice)}

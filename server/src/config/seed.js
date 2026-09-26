@@ -12,7 +12,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env.local') });
 
 const seedInitialData = async () => {
   try {
-    const connStr = process.env.MONGO_URL || 'mongodb://localhost:27017/AYUSH_WESBITE';
+    const connStr = process.env.MONGO_URL ||`mongodb+srv://codebyvineet1611_db_user:QpTfcCDTQZhqeenN@ayushdatabase.zobnvlr.mongodb.net/AYUSH_DATABASE?retryWrites=true&w=majority`;
     if (mongoose.connection.readyState === 0) {
       await mongoose.connect(connStr);
       console.log(`[Seed DB Connected]: ${connStr}`);

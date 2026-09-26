@@ -1,11 +1,12 @@
 import LossDetail from '../modals/LossDetail.js';
+import Company from '../modals/Company.js';
 
 // @desc    Get all loss details filtered by company & month
 // @route   GET /api/loss-details
 // @access  Private
 export const getLossDetails = async (req, res, next) => {
   try {
-    const { companyId, month } = req.query;
+    const { companyId, month, financialYear, cycle } = req.query;
     const filter = {};
 
     if (companyId && companyId !== 'all') {
@@ -13,6 +14,20 @@ export const getLossDetails = async (req, res, next) => {
     }
     if (month && month !== 'all') {
       filter.month = month;
+    }
+    if (financialYear && financialYear !== 'all') {
+      filter.$or = [
+        { financialYear: financialYear },
+        { financialYear: { $exists: false } },
+        { financialYear: '' },
+      ];
+    }
+    if (cycle && cycle !== 'all') {
+      filter.$or = [
+        { cycle: cycle },
+        { cycle: { $exists: false } },
+        { cycle: '' },
+      ];
     }
 
     const lossItems = await LossDetail.find(filter)
@@ -37,6 +52,8 @@ export const createLossDetail = async (req, res, next) => {
     const {
       companyId,
       month,
+      financialYear,
+      cycle,
       trackingId,
       price = 0,
       reason = 'Parcel damage/loss',
@@ -54,8 +71,16 @@ export const createLossDetail = async (req, res, next) => {
     const rawStat = (status || '').toString().trim().toLowerCase();
     const validStat = (rawStat === 'recovered' || rawStat === 'recover') ? 'Recovered' : 'Not Recovered';
 
+    let resolvedCompanyId = companyId;
+    if (!resolvedCompanyId) {
+      const defaultComp = await Company.findOne({ status: 'Active' });
+      if (defaultComp) resolvedCompanyId = defaultComp._id;
+    }
+
     const lossItemData = {
       month,
+      financialYear: financialYear || '2026-2027',
+      cycle: cycle || '',
       trackingId: trackingId || `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`,
       price: Number(price) || 0,
       reason: reason || 'Parcel damage/loss',
@@ -63,8 +88,8 @@ export const createLossDetail = async (req, res, next) => {
       status: validStat,
       remark: (remark ?? ayushRemark ?? '').toString().trim(),
     };
-    if (companyId) {
-      lossItemData.companyId = companyId;
+    if (resolvedCompanyId) {
+      lossItemData.companyId = resolvedCompanyId;
     }
 
     const lossItem = new LossDetail(lossItemData);
@@ -95,9 +120,23 @@ export const bulkImportLossDetails = async (req, res, next) => {
       throw new Error('Month and array of loss rows are required.');
     }
 
-    const docsToInsert = rows.map((r, index) => {
+    // Map company name or code to company ObjectId
+    const allCompanies = await Company.find({});
+    const companyMap = new Map();
+    allCompanies.forEach((c) => {
+      companyMap.set(c.name.trim().toLowerCase(), c._id);
+      companyMap.set(c.code.trim().toLowerCase(), c._id);
+      companyMap.set(c._id.toString(), c._id);
+    });
+
+    const defaultCompanyId = companyId || allCompanies.find((c) => c.status === 'Active')?._id || allCompanies[0]?._id;
+
+    const docsToInsert = rows.map((r) => {
       const rawStat = (r.status || '').toString().trim().toLowerCase();
       const validStat = (rawStat === 'recovered' || rawStat === 'recover') ? 'Recovered' : 'Not Recovered';
+
+      const rawComp = (r.company || r.companyName || r.companyId || '').toString().trim().toLowerCase();
+      const matchedCompanyId = companyMap.get(rawComp) || r.companyId || defaultCompanyId || null;
 
       const doc = {
         month,
@@ -108,17 +147,18 @@ export const bulkImportLossDetails = async (req, res, next) => {
         status: validStat,
         remark: (r.remark ?? r.ayushRemark ?? '').toString().trim(),
       };
-      if (companyId) doc.companyId = companyId;
+      if (matchedCompanyId) doc.companyId = matchedCompanyId;
       return doc;
     });
 
     const inserted = await LossDetail.insertMany(docsToInsert);
+    const populated = await LossDetail.populate(inserted, { path: 'companyId', select: 'name code' });
 
     res.status(201).json({
       success: true,
       message: `Successfully imported ${inserted.length} loss records with default 'Not Recovered' status!`,
       count: inserted.length,
-      data: inserted,
+      data: populated,
     });
   } catch (error) {
     next(error);

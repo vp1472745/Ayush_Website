@@ -207,28 +207,37 @@ export const Reports = () => {
     return direct + Math.round(shared);
   }, [hubExpenses, selectedCompanyFilter, activeCompanies]);
 
-  // 4. Total Loss & Recovery (₹ from LossDetail) - proportional allocation when filtered
+  // 4. Total Loss & Recovery (₹ from LossDetail) - direct company loss + shared overhead share
   const lossMetrics = useMemo(() => {
     let rawTotalLoss = 0;
     let rawRecoveredLoss = 0;
     let rawUnrecoveredLoss = 0;
 
-    lossDetails.forEach((row) => {
+    const isCompanyFiltered = selectedCompanyFilter && selectedCompanyFilter !== 'all';
+    const relevantLosses = !isCompanyFiltered
+      ? lossDetails
+      : lossDetails.filter((l) => {
+          const compId = l.companyId?._id || l.companyId?.id || l.companyId;
+          return compId === selectedCompanyFilter || !compId;
+        });
+
+    relevantLosses.forEach((row) => {
       const price = Number(row.price) || 0;
-      rawTotalLoss += price;
+      const compId = row.companyId?._id || row.companyId?.id || row.companyId;
+      const isShared = !compId;
+      const effectivePrice = isCompanyFiltered && isShared ? price / (activeCompanies.length || 1) : price;
+
+      rawTotalLoss += effectivePrice;
       if (row.status === 'Recovered') {
-        rawRecoveredLoss += price;
+        rawRecoveredLoss += effectivePrice;
       } else {
-        rawUnrecoveredLoss += price;
+        rawUnrecoveredLoss += effectivePrice;
       }
     });
 
-    const isAll = !selectedCompanyFilter || selectedCompanyFilter === 'all';
-    const numCompanies = activeCompanies.length || 1;
-
-    const totalLoss = isAll ? rawTotalLoss : Math.round(rawTotalLoss / numCompanies);
-    const recoveredLoss = isAll ? rawRecoveredLoss : Math.round(rawRecoveredLoss / numCompanies);
-    const unrecoveredLoss = isAll ? rawUnrecoveredLoss : Math.round(rawUnrecoveredLoss / numCompanies);
+    const totalLoss = Math.round(rawTotalLoss);
+    const recoveredLoss = Math.round(rawRecoveredLoss);
+    const unrecoveredLoss = Math.round(rawUnrecoveredLoss);
     const recoveryRate = totalLoss > 0 ? (recoveredLoss / totalLoss) * 100 : 100;
     return { totalLoss, recoveredLoss, unrecoveredLoss, recoveryRate, rawTotalLoss, rawUnrecoveredLoss };
   }, [lossDetails, selectedCompanyFilter, activeCompanies]);
@@ -377,11 +386,14 @@ export const Reports = () => {
       const revenue = compPayments.reduce((s, p) => s + (Number(p.amount) || Number(p.finalPayable) || 0), 0);
       const riderPayout = compPayouts.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
       const deliveries = compPayouts.reduce((s, p) => s + (Number(p.deliveredPickupTotal) || Number(p.delivered) || 0), 0);
-      // Shared hub loss allocated equally across active companies, just like hub expenses
-      const rawTotalUnrecoveredLoss = lossDetails
-        .filter((l) => l.status !== 'Recovered')
+      // Filter-wise unrecovered loss: direct company loss + shared overhead share
+      const directUnrecLoss = compLosses
+        .filter((l) => (l.status || '').toLowerCase() !== 'recovered')
         .reduce((s, l) => s + (Number(l.price) || 0), 0);
-      const unrecoveredLoss = Math.round(rawTotalUnrecoveredLoss / (activeCompanies.length || 1));
+      const sharedUnrecLoss = lossDetails
+        .filter((l) => !l.companyId && (l.status || '').toLowerCase() !== 'recovered')
+        .reduce((s, l) => s + (Number(l.price) || 0), 0) / (activeCompanies.length || 1);
+      const unrecoveredLoss = directUnrecLoss + Math.round(sharedUnrecLoss);
       
       // Shared hub costs allocated equally or recorded per company
       const directExpense = compExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
@@ -536,9 +548,10 @@ export const Reports = () => {
       XLSX.utils.book_append_sheet(wb, wsExp, 'Hub Expenses');
 
       // 5. Loss & Recovery Sheet
-      const lossHeaders = ['Tracking ID', 'Rider Name', 'Month', 'Loss Reason', 'Price (INR)', 'Status', 'Remark'];
+      const lossHeaders = ['Tracking ID', 'Company', 'Rider Name', 'Month', 'Loss Reason', 'Price (INR)', 'Status', 'Remark'];
       const lossRows = lossDetails.map((l) => [
         l.trackingId || '',
+        l.companyId?.name || (companies || []).find((c) => (c.id || c._id) === (l.companyId?._id || l.companyId))?.name || '',
         l.riderName || '',
         l.month || selectedMonthFilter,
         l.reason || '',
@@ -1341,6 +1354,7 @@ export const Reports = () => {
               <thead>
                 <tr className="bg-gray-50/90 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
                   <th className="py-2 px-3">Tracking ID</th>
+                  <th className="py-2 px-3">Company</th>
                   <th className="py-2 px-3">Rider Name</th>
                   <th className="py-2 px-3">Reason</th>
                   <th className="py-2 px-3 text-right">Parcel Value</th>
@@ -1352,6 +1366,9 @@ export const Reports = () => {
                 {filterBySearch(lossDetails, ['trackingId', 'riderName', 'reason', 'remark', 'status']).map((l, i) => (
                   <tr key={l._id || i} className="hover:bg-gray-50/70 transition-colors">
                     <td className="py-1.5 sm:py-2 px-3 font-mono font-semibold text-gray-900">{l.trackingId || 'N/A'}</td>
+                    <td className="py-1.5 sm:py-2 px-3 font-semibold text-gray-800 text-[11px]">
+                      {l.companyId?.name || (companies || []).find((c) => (c.id || c._id) === (l.companyId?._id || l.companyId))?.name || '—'}
+                    </td>
                     <td className="py-1.5 sm:py-2 px-3 font-medium text-gray-800">{l.riderName || '—'}</td>
                     <td className="py-1.5 sm:py-2 px-3 text-gray-600">{l.reason || 'Damage/Loss'}</td>
                     <td className="py-1.5 sm:py-2 px-3 text-right font-bold text-gray-900 tabular-nums">{formatCurrency(l.price)}</td>
