@@ -275,11 +275,14 @@ export const Dashboard = () => {
     }, 0);
   }, [filteredRiderPayouts, isValmoSelected, isValmoRiderRecord]);
 
-  // Amount collected from Valmo riders (riders pay the hub)
+  // Amount collected from Valmo riders (riders pay the hub) - only counted when status is marked PAID
   const totalValmoRiderCollection = useMemo(() => {
     return filteredRiderPayouts.reduce((s, r) => {
       if (isValmoRiderRecord(r)) {
-        return s + (Number(r.finalPayout) || Number(r.payout) || 0);
+        const isPaid = (r.paymentStatus || r.status || '').toString().trim().toUpperCase() === 'PAID';
+        if (isPaid) {
+          return s + (Number(r.finalPayout) || Number(r.payout) || 0);
+        }
       }
       return s;
     }, 0);
@@ -528,9 +531,15 @@ export const Dashboard = () => {
         ? 0
         : compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
 
-      // Valmo rider collection (money received from riders)
+      // Valmo rider collection (money received from riders - only when status is marked PAID)
       const valmoCollection = isCompValmo
-        ? compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0)
+        ? compRiders.reduce((s, p) => {
+            const isPaid = (p.paymentStatus || p.status || '').toString().trim().toUpperCase() === 'PAID';
+            if (isPaid) {
+              return s + (Number(p.finalPayout) || Number(p.payout) || 0);
+            }
+            return s;
+          }, 0)
         : 0;
 
       // Real unrecovered loss (direct franchise loss + shared overhead share)
@@ -851,7 +860,7 @@ export const Dashboard = () => {
             </div>
             <div className="text-[10px] text-gray-400 truncate mt-0.5">
               {isValmoSelected
-                ? `${riderStats.total} Riders Total • Rider pays Hub (₹0 Outflow)`
+                ? `${riderStats.total} Riders Total • ${riderStats.paid} Paid (${riderStats.pending} Pending)`
                 : `${riderStats.total} Riders Total (${riderStats.pending} Pending)`}
             </div>
           </div>
