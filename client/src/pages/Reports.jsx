@@ -124,7 +124,7 @@ export const Reports = () => {
           params: timeScope === 'month' ? { month: selectedMonthFilter } : {},
         }),
         apiClient.get(ENDPOINTS.LOSS_DETAILS.GET_ALL, { params }),
-        apiClient.get(ENDPOINTS.ADVANCES.GET_ALL, { params }),
+        apiClient.get(ENDPOINTS.ADVANCES.GET_ALL),
         apiClient.get(ENDPOINTS.PAYMENTS.GET_ALL, { params }),
       ]);
 

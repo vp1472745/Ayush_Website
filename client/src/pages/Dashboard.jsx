@@ -445,13 +445,13 @@ export const Dashboard = () => {
     const paidAmount = isValmoSelected
       ? 0
       : filteredRiderPayouts
-          .filter((r) => (r.paymentStatus || '').toUpperCase() === 'PAID' && !isValmoRiderRecord(r))
-          .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
+        .filter((r) => (r.paymentStatus || '').toUpperCase() === 'PAID' && !isValmoRiderRecord(r))
+        .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
     const pendingAmount = isValmoSelected
       ? 0
       : filteredRiderPayouts
-          .filter((r) => (r.paymentStatus || '').toUpperCase() !== 'PAID' && !isValmoRiderRecord(r))
-          .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
+        .filter((r) => (r.paymentStatus || '').toUpperCase() !== 'PAID' && !isValmoRiderRecord(r))
+        .reduce((s, r) => s + (Number(r.finalPayout) || Number(r.payout) || 0), 0);
     return { total, paid, pending, paidAmount, pendingAmount };
   }, [filteredRiderPayouts, isValmoSelected, isValmoRiderRecord]);
 
@@ -534,12 +534,12 @@ export const Dashboard = () => {
       // Valmo rider collection (money received from riders - only when status is marked PAID)
       const valmoCollection = isCompValmo
         ? compRiders.reduce((s, p) => {
-            const isPaid = (p.paymentStatus || p.status || '').toString().trim().toUpperCase() === 'PAID';
-            if (isPaid) {
-              return s + (Number(p.finalPayout) || Number(p.payout) || 0);
-            }
-            return s;
-          }, 0)
+          const isPaid = (p.paymentStatus || p.status || '').toString().trim().toUpperCase() === 'PAID';
+          if (isPaid) {
+            return s + (Number(p.finalPayout) || Number(p.payout) || 0);
+          }
+          return s;
+        }, 0)
         : 0;
 
       // Real unrecovered loss (direct franchise loss + shared overhead share)
@@ -827,8 +827,8 @@ export const Dashboard = () => {
               {totalValmoRiderCollection > 0
                 ? `${formatCurrency(totalRevenue)} + ${formatCurrency(totalValmoRiderCollection)} Riders`
                 : filteredPayments.length > 0
-                ? `${filteredPayments.length} Payment Cycle${filteredPayments.length > 1 ? 's' : ''}`
-                : 'No payments recorded'}
+                  ? `${filteredPayments.length} Payment Cycle${filteredPayments.length > 1 ? 's' : ''}`
+                  : 'No payments recorded'}
             </div>
           </div>
         </div>
@@ -921,8 +921,8 @@ export const Dashboard = () => {
         <div className="bg-white border border-slate-200/90 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3">
           <div
             className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${netProfit >= 0
-                ? 'bg-blue-50 border-blue-100/70 text-blue-600'
-                : 'bg-rose-50 border-rose-100/70 text-rose-600'
+              ? 'bg-blue-50 border-blue-100/70 text-blue-600'
+              : 'bg-rose-50 border-rose-100/70 text-rose-600'
               }`}
           >
             <TrendingUp className="w-4.5 h-4.5" />
@@ -1313,14 +1313,14 @@ export const Dashboard = () => {
                   const tooltipPosClass = idx === chartBarsData.length - 1
                     ? 'right-0 -translate-x-1'
                     : idx === 0
-                    ? 'left-0 translate-x-1'
-                    : 'left-1/2 -translate-x-1/2';
+                      ? 'left-0 translate-x-1'
+                      : 'left-1/2 -translate-x-1/2';
 
                   const caretPosClass = idx === chartBarsData.length - 1
                     ? 'right-6'
                     : idx === 0
-                    ? 'left-6'
-                    : 'left-1/2 -translate-x-1/2';
+                      ? 'left-6'
+                      : 'left-1/2 -translate-x-1/2';
 
                   return (
                     <div
