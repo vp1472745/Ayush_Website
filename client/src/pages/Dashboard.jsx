@@ -285,6 +285,11 @@ export const Dashboard = () => {
     }, 0);
   }, [filteredRiderPayouts, isValmoRiderRecord]);
 
+  // Total Money In = Franchise Revenue + Valmo Rider Collection (riders pay the hub in Valmo)
+  const totalMoneyIn = useMemo(() => {
+    return totalRevenue + totalValmoRiderCollection;
+  }, [totalRevenue, totalValmoRiderCollection]);
+
   // 2b. Rate Card Average across filtered riders
   const avgRateCard = useMemo(() => {
     const ridersWithRate = filteredRiderPayouts.filter((r) => Number(r.rateCard) > 0);
@@ -412,10 +417,10 @@ export const Dashboard = () => {
     return Math.round(rawTotalAdvanceOutstanding / numCompanies);
   }, [isAllCompanies, rawTotalAdvanceOutstanding, activeCompanies]);
 
-  // 6. Net Business Profit = Revenue - Rider Payout - Hub Expenses - Unrecovered Loss
+  // 6. Net Business Profit = Revenue (including Valmo rider collection) - Rider Payout - Hub Expenses - Unrecovered Loss
   const netProfit = useMemo(() => {
-    return totalRevenue - totalRiderPayout - totalHubExpenses - unrecoveredLoss;
-  }, [totalRevenue, totalRiderPayout, totalHubExpenses, unrecoveredLoss]);
+    return totalMoneyIn - totalRiderPayout - totalHubExpenses - unrecoveredLoss;
+  }, [totalMoneyIn, totalRiderPayout, totalHubExpenses, unrecoveredLoss]);
 
   // 7. Total Money Out = Rider Payout + Hub Expenses + Unrecovered Loss + Advances Given
   const totalMoneyOut = useMemo(() => {
@@ -425,8 +430,8 @@ export const Dashboard = () => {
   // 8. Opening & Closing Balance
   const openingBalance = 0;
   const closingBalance = useMemo(() => {
-    return openingBalance + totalRevenue - totalMoneyOut;
-  }, [openingBalance, totalRevenue, totalMoneyOut]);
+    return openingBalance + totalMoneyIn - totalMoneyOut;
+  }, [openingBalance, totalMoneyIn, totalMoneyOut]);
 
   // 9. Rider stats
   const riderStats = useMemo(() => {
@@ -523,6 +528,11 @@ export const Dashboard = () => {
         ? 0
         : compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0);
 
+      // Valmo rider collection (money received from riders)
+      const valmoCollection = isCompValmo
+        ? compRiders.reduce((s, p) => s + (Number(p.finalPayout) || Number(p.payout) || 0), 0)
+        : 0;
+
       // Real unrecovered loss (direct franchise loss + shared overhead share)
       const directLoss = lossDetails
         .filter((l) => isCompanyMatch(l.companyId, compId) && (l.status || '').toLowerCase() !== 'recovered')
@@ -564,13 +574,15 @@ export const Dashboard = () => {
       const hubExpense = directExp + compSharedExp;
       const otherExpense = 0;
       const myPayment = 0;
-      const compNetProfit = income - payout - hubExpense - compLoss;
+      const compNetProfit = income + valmoCollection - payout - hubExpense - compLoss;
 
       return {
         companyId: compId,
         name: comp.name,
         income,
         payout,
+        valmoCollection,
+        isValmo: isCompValmo,
         hubExpense,
         otherExpense,
         loss: compLoss,
@@ -587,19 +599,20 @@ export const Dashboard = () => {
       (acc, f) => ({
         income: acc.income + f.income,
         payout: acc.payout + f.payout,
+        valmoCollection: acc.valmoCollection + (f.valmoCollection || 0),
         hubExpense: acc.hubExpense + f.hubExpense,
         otherExpense: acc.otherExpense + f.otherExpense,
         loss: acc.loss + f.loss,
         myPayment: acc.myPayment + f.myPayment,
         netProfit: acc.netProfit + f.netProfit,
       }),
-      { income: 0, payout: 0, hubExpense: 0, otherExpense: 0, loss: 0, myPayment: 0, netProfit: 0 }
+      { income: 0, payout: 0, valmoCollection: 0, hubExpense: 0, otherExpense: 0, loss: 0, myPayment: 0, netProfit: 0 }
     );
 
     if (isAllCompanies) {
       totals.hubExpense = rawTotalHubExpenses;
       totals.loss = rawTotalUnrecoveredLoss;
-      totals.netProfit = totals.income - totals.payout - totals.hubExpense - totals.loss;
+      totals.netProfit = totals.income + totals.valmoCollection - totals.payout - totals.hubExpense - totals.loss;
     }
 
     return totals;
@@ -612,6 +625,7 @@ export const Dashboard = () => {
   const chartBarsData = useMemo(() => {
     const list = franchisePerformance.map((f) => ({
       ...f,
+      incomeTotal: f.income + (f.valmoCollection || 0),
       expTotal: f.payout + f.hubExpense + (f.loss || 0),
     }));
 
@@ -621,7 +635,8 @@ export const Dashboard = () => {
         companyId: 'all-total',
         name: 'Total',
         isTotal: true,
-        income: allCompaniesTotals.income,
+        income: allCompaniesTotals.income + (allCompaniesTotals.valmoCollection || 0),
+        incomeTotal: allCompaniesTotals.income + (allCompaniesTotals.valmoCollection || 0),
         payout: allCompaniesTotals.payout,
         hubExpense: allCompaniesTotals.hubExpense,
         loss: allCompaniesTotals.loss,
@@ -797,10 +812,12 @@ export const Dashboard = () => {
               Franchise Revenue
             </div>
             <div className="text-lg font-bold text-gray-900 leading-tight mt-0.5 tracking-tight">
-              {formatCurrency(totalRevenue)}
+              {formatCurrency(totalMoneyIn)}
             </div>
             <div className="text-[10px] text-gray-400 truncate mt-0.5">
-              {filteredPayments.length > 0
+              {totalValmoRiderCollection > 0
+                ? `${formatCurrency(totalRevenue)} + ${formatCurrency(totalValmoRiderCollection)} Riders`
+                : filteredPayments.length > 0
                 ? `${filteredPayments.length} Payment Cycle${filteredPayments.length > 1 ? 's' : ''}`
                 : 'No payments recorded'}
             </div>
@@ -955,13 +972,31 @@ export const Dashboard = () => {
                         <span className="whitespace-nowrap tabular-nums">{formatCurrency(c.amount)}</span>
                       </div>
                     ))}
+
+                    {/* Valmo Rider Collection / Rider Received */}
+                    {totalValmoRiderCollection > 0 && (
+                      <div className="pt-1.5 mt-1 border-t border-emerald-100/70">
+                        <div className="flex items-center justify-between font-bold text-gray-800 gap-1">
+                          <span className="whitespace-nowrap">Rider Collection</span>
+                          <span className="whitespace-nowrap tabular-nums text-emerald-700 font-bold">
+                            {formatCurrency(totalValmoRiderCollection)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-gray-500 pl-2 gap-1 text-[10px]">
+                          <span className="truncate">
+                            {isValmoSelected ? 'VALMO (Riders pay hub)' : 'VALMO Riders'}
+                          </span>
+                          <span className="whitespace-nowrap tabular-nums">{formatCurrency(totalValmoRiderCollection)}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="mt-2.5 pt-2 border-t border-emerald-50">
                   <div className="bg-emerald-50 text-emerald-900 font-bold text-[11px] py-1 px-2 rounded-md flex items-center justify-between gap-1">
                     <span className="whitespace-nowrap">Total Money In</span>
-                    <span className="whitespace-nowrap tabular-nums">{formatCurrency(totalRevenue)}</span>
+                    <span className="whitespace-nowrap tabular-nums">{formatCurrency(totalMoneyIn)}</span>
                   </div>
                 </div>
               </div>
@@ -1056,7 +1091,7 @@ export const Dashboard = () => {
                     </div>
                     <div className="flex items-center justify-between gap-1">
                       <span className="whitespace-nowrap">Total In</span>
-                      <strong className="text-gray-900 whitespace-nowrap tabular-nums">{formatCurrency(totalRevenue)}</strong>
+                      <strong className="text-gray-900 whitespace-nowrap tabular-nums">{formatCurrency(totalMoneyIn)}</strong>
                     </div>
                     <div className="flex items-center justify-between gap-1">
                       <span className="whitespace-nowrap">Total Out</span>
@@ -1104,12 +1139,17 @@ export const Dashboard = () => {
                   <td className="py-1.5 px-2 font-medium text-gray-700 whitespace-nowrap">Franchise Income</td>
                   {franchisePerformance.map((f) => (
                     <td key={f.companyId} className="py-1.5 px-2 text-right text-gray-900 whitespace-nowrap tabular-nums">
-                      {formatCurrency(f.income)}
+                      {formatCurrency(f.income + (f.valmoCollection || 0))}
+                      {f.valmoCollection > 0 && (
+                        <span className="block text-[9px] text-emerald-600 font-medium leading-none mt-0.5">
+                          (+{formatCurrency(f.valmoCollection)} rider rec)
+                        </span>
+                      )}
                     </td>
                   ))}
                   {isAllCompanies && (
                     <td className="py-1.5 px-2 text-right font-bold text-gray-900 whitespace-nowrap tabular-nums">
-                      {formatCurrency(allCompaniesTotals.income)}
+                      {formatCurrency(allCompaniesTotals.income + (allCompaniesTotals.valmoCollection || 0))}
                     </td>
                   )}
                 </tr>
@@ -1123,7 +1163,7 @@ export const Dashboard = () => {
                         {formatCurrency(f.payout)}
                         {isVal && (
                           <span className="block text-[9px] text-emerald-600 font-medium leading-none mt-0.5">
-                            (Rider pays)
+                            {f.valmoCollection > 0 ? `+${formatCurrency(f.valmoCollection)} received` : '(Rider pays)'}
                           </span>
                         )}
                       </td>
@@ -1132,6 +1172,11 @@ export const Dashboard = () => {
                   {isAllCompanies && (
                     <td className="py-1.5 px-2 text-right font-bold text-gray-800 whitespace-nowrap tabular-nums">
                       {formatCurrency(allCompaniesTotals.payout)}
+                      {allCompaniesTotals.valmoCollection > 0 && (
+                        <span className="block text-[9px] text-emerald-600 font-medium leading-none mt-0.5">
+                          (+{formatCurrency(allCompaniesTotals.valmoCollection)} Valmo rec)
+                        </span>
+                      )}
                     </td>
                   )}
                 </tr>
